@@ -75,12 +75,33 @@ Start the bot:
 ```bash
 npm start
 ```
-or
-```bash
-node nkx.js
-```
+
 The bot will keep the process alive while the Chat API is unavailable. It logs each retry and backs
 off from `CHAT_API_RETRY_DELAY_MS` up to `CHAT_API_MAX_RETRY_DELAY_MS`.
+
+## Docker Deployment
+
+The repository includes a Dockerfile for Render Web Services, Railway, and other container hosts.
+The image listens on `PORT` (default `10000`) and exposes `/`, `/health`, and `/healthz` so the
+platform can see that the bot process is alive while it waits for the Chat API.
+
+```bash
+docker build -t insta-bot-v1 .
+docker run --rm \
+  -p 10000:10000 \
+  -e CHAT_API_URL=https://nkx-ica.neokex.xyz \
+  -e CHAT_API_TOKEN=chat.api.toke.neokex.ica.token.can.change.a9y.2ime.ok \
+  -e ACCOUNT_FILE=/run/secrets/account.txt \
+  -v "$PWD/account.txt:/run/secrets/account.txt:ro" \
+  insta-bot-v1
+```
+
+`node_modules/` and `package-lock.json` are excluded from the Docker build context. The image runs
+`npm install` during its build, so dependencies are generated inside the image. Do not copy cookies
+or `.env` into the image.
+
+For Render or Railway, provide the cookie export as a secret file and set `ACCOUNT_FILE` to the
+mounted path shown by that platform. Keep the service port set to the platform-provided `PORT`.
 
 ## Configuration
 
@@ -88,6 +109,8 @@ The normal settings live in `config.json`. Environment variables override the Ch
 
 | Variable | Default | Purpose |
 | --- | ---: | --- |
+| `ACCOUNT_FILE` | `./account.txt` | Path to the Netscape cookie file; use the platform secret-file path in containers |
+| `PORT` | `10000` | HTTP health-server port supplied by Render or Railway |
 | `CHAT_API_URL` | `https://nkx-ica.neokex.xyz` | Private Chat API base URL |
 | `CHAT_API_TOKEN` | shared token | Bearer token for the Chat API |
 | `CHAT_API_TIMEOUT_MS` | `30000` | HTTP and health-check timeout |
@@ -153,6 +176,7 @@ Created and maintained by **Saifullah Al Neoaz (NEOKEX)**.
 - GitHub: [@lazyneoaz](https://github.com/lazyneoaz)
 - Public bot: [InstaBot-V1](https://github.com/lazyneoaz/InstaBot-V1)
 - Chat client: [insta-chat-client](https://github.com/lazyneoaz/Insta-Chat-API-Client)
+- Private server: [Insta-Chat-API-Server](https://github.com/lazyneoaz/Insta-Chat-API-Server)
 
 This project uses the open-source `nkxica` Instagram client layer inside the private server. Please
 respect Instagram's terms, rate limits, and account-safety requirements.

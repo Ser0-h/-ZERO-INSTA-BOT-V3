@@ -2,14 +2,20 @@
 
 const { loadConfig } = require('./config');
 const { InstagramBot } = require('./bot');
+const { startHealthServer } = require('./health-server');
 
 async function main() {
   const bot = new InstagramBot(loadConfig());
+  const healthServer = await startHealthServer({ bot });
   let shutdownPromise;
   const shutdown = async (signal) => {
     if (shutdownPromise) return shutdownPromise;
     console.log(`${signal} received.`);
-    shutdownPromise = bot.stop().finally(() => process.exit(0));
+    shutdownPromise = (async () => {
+      await bot.stop();
+      await healthServer.close();
+      process.exit(0);
+    })();
     return shutdownPromise;
   };
 
@@ -19,12 +25,21 @@ async function main() {
   process.on('uncaughtException', (error) => {
     console.error('Uncaught exception:', error);
     if (!shutdownPromise) {
-      shutdownPromise = bot.stop().finally(() => process.exit(1));
+      shutdownPromise = (async () => {
+        await bot.stop();
+        await healthServer.close();
+        process.exit(1);
+      })();
     }
   });
 
-  await bot.start();
-  return bot;
+  try {
+    await bot.start();
+    return bot;
+  } catch (error) {
+    await healthServer.close();
+    throw error;
+  }
 }
 
 if (require.main === module) {

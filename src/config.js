@@ -76,7 +76,7 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     eventCommandUnload: listFromValue(commandSettings.eventCommandUnload),
     dataDir: resolveFromRoot(rootDir, settings.dataDir, 'data'),
     stateFile: resolveFromRoot(rootDir, settings.stateFile, 'data/bot-state.json'),
-    accountFile: resolveFromRoot(rootDir, settings.accountFile, 'account.txt'),
+    accountFile: resolveFromRoot(rootDir, process.env.ACCOUNT_FILE ?? settings.accountFile, 'account.txt'),
     prefix: stringFromValue(settings.prefix, '!'),
     adminIds: new Set(listFromValue(settings.adminIds)),
     ownerId: stringFromValue(settings.ownerId),
