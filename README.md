@@ -80,8 +80,6 @@ node nkx.js
 The bot will keep the process alive while the Chat API is unavailable. It logs each retry and backs
 off from `CHAT_API_RETRY_DELAY_MS` up to `CHAT_API_MAX_RETRY_DELAY_MS`.
 
-Media downloads use the default `alldl` command:
-
 ```text
 !alldl <public URL>
 ```
