@@ -170,8 +170,11 @@ class CommandRouter {
     return 0;
   }
 
-  getRoleName(role) {
-    return Number(role) >= 2 ? 'owner' : Number(role) === 1 ? 'admin' : 'user';
+  getRoleName(role, senderID = '') {
+    if (Number(role) >= 2) {
+      return String(senderID || '') === String(this.config.ownerId || '') ? 'owner' : 'admin';
+    }
+    return Number(role) === 1 ? 'admin' : 'user';
   }
 
   getRequiredRole(command, hook = 'onStart') {
@@ -567,7 +570,7 @@ class CommandRouter {
       body: event.body || '',
       prefix: this.store.getPrefix(threadID, this.config.prefix),
       role: this.getRole(event.senderID, event),
-      roleName: this.getRoleName(this.getRole(event.senderID, event)),
+      roleName: this.getRoleName(this.getRole(event.senderID, event), event.senderID),
       getLang: this.language,
       senderID: event.senderID || event.author || event.userID || '',
       threadID,
