@@ -235,10 +235,10 @@ class CommandRouter {
   pruneState() {
     const now = Date.now();
     for (const [key, handler] of this.replyHandlers) {
-      if (handler.expiresAt <= now) this.replyHandlers.delete(key);
+      if (handler.expiresAt && handler.expiresAt <= now) this.replyHandlers.delete(key);
     }
     for (const [key, handler] of this.reactionHandlers) {
-      if (handler.expiresAt <= now) this.reactionHandlers.delete(key);
+      if (handler.expiresAt && handler.expiresAt <= now) this.reactionHandlers.delete(key);
     }
     while (this.replyHandlers.size > this.config.maxHandlerEntries) {
       this.replyHandlers.delete(this.replyHandlers.keys().next().value);
@@ -281,11 +281,11 @@ class CommandRouter {
     if (!startsWithPrefix && !isPrefixlessCommand) {
       const reply = event.replyTo && this.replyHandlers.get(String(event.replyTo));
       if (reply) {
-        if (reply.expiresAt <= Date.now()) {
+        if (reply.expiresAt && reply.expiresAt <= Date.now()) {
           this.replyHandlers.delete(String(event.replyTo));
-        } else if (reply.senderID && reply.senderID !== String(event.senderID || '')) {
-          return false;
         } else {
+          const owner = reply.author ?? reply.senderID;
+          if (owner && String(owner) !== String(event.senderID || '')) return false;
           return this.handleReply(event, body, reply);
         }
       }
@@ -435,20 +435,27 @@ class CommandRouter {
     const command = this.resolveCommand(registered.commandName);
     if (!command) return false;
     if (!this.canUse(command, event, 'onReply')) return false;
-    const context = this.createContext(event, tokenize(body), command.config.name);
+    const args = tokenize(body);
+    const context = this.createContext(event, args, command.config.name);
     context.command = command;
     context.reply = registered;
-    // Goatbot passes an `onReply` entry as `Reply`; mirror it so command
-    // modules written for Goatbot read the same fields (author/commandName/…).
-    context.Reply = {
-      commandName: registered.commandName,
-      author: registered.senderID,
-      messageID: registered.targetMessageID || event.messageID || null,
-      delete: () => this.replyHandlers.delete(String(registered.targetMessageID || event.messageID))
-    };
+    context.hook = 'onReply';
+    // Goatbot stores an arbitrary object in `global.GoatBot.onReply` and hands it
+    // to the command's `onReply` hook as `Reply`, keeping any custom fields
+    // (`result`, `type`, ...). Hand the stored entry over as-is and only add the
+    // helpers we need, so both registration styles work verbatim.
+    const targetMessageID = registered.targetMessageID || registered.messageID || event.messageID || null;
+    context.Reply = Object.assign(registered, {
+      commandName: registered.commandName || command.config.name,
+      author: registered.author ?? registered.senderID ?? String(event.senderID || ''),
+      messageID: targetMessageID,
+      delete: () => this.replyHandlers.delete(String(targetMessageID)),
+      command
+    });
     try {
-      if (registered.handler) await registered.handler(context);
-      else await this.invoke(command, 'onReply', event, tokenize(body), { reply: registered, record: true });
+      if (typeof registered.handler === 'function') await registered.handler(context);
+      else if (typeof command.onReply === 'function') await command.onReply(context);
+      else return false;
     } catch (error) {
       this.logger.error(`Reply handler ${command.config.name} failed:`, error);
       await this.safeReply(context, 'I could not process that reply. Please try again.');
@@ -609,15 +616,23 @@ class CommandRouter {
         this.language('system.syntax', `Wrong usage. Use ${this.store.getPrefix(threadID, this.config.prefix)}help ${commandName} for help.`)
       ),
       setReply: (handler, ttlMs = 10 * 60 * 1000, targetMessageID = event.messageID) => {
+        // Goatbot's `global.GoatBot.onReply.set(id, data)` and this helper share
+        // the same store. `handler` may be a function or a plain data object
+        // merged into the entry (then the command's `onReply` hook is used).
+        const isData = handler && typeof handler === 'object';
         const replyHandler = typeof handler === 'function' ? handler : command?.onReply;
-        if (!targetMessageID || typeof replyHandler !== 'function') return null;
-        this.replyHandlers.set(String(targetMessageID), {
+        if (!targetMessageID || (!isData && typeof replyHandler !== 'function')) return null;
+        const entry = {
+          ...(isData ? handler : {}),
           commandName,
-          handler: replyHandler,
+          author: String(event.senderID || ''),
           senderID: String(event.senderID || ''),
           targetMessageID: String(targetMessageID),
+          messageID: String(targetMessageID),
           expiresAt: Date.now() + Math.max(1000, Number(ttlMs) || 0)
-        });
+        };
+        if (typeof replyHandler === 'function') entry.handler = replyHandler;
+        this.replyHandlers.set(String(targetMessageID), entry);
         return targetMessageID;
       },
       setReactionHandler: (handler, ttlMs = 10 * 60 * 1000, targetMessageID = event.messageID) => {

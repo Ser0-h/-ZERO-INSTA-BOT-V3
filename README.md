@@ -125,6 +125,37 @@ receive a context with `api`, `config`, `store`, `event`, `args`, `message`,
 `removeCommandNameFromBody`, and `functions`/`utils` (the same object as
 `global.utils`).
 
+### Reply handlers
+
+Reply handlers follow the Goatbot contract. Register with the global Map and read
+your data back from `Reply`:
+
+```js
+module.exports = {
+  config: { name: 'choose', author: 'Saifullah Al Neoaz (NEOKEX)' },
+  async onStart({ message, event }) {
+    const info = await message.reply('Pick a number from 1 to 3');
+    global.NkxBot.onReply.set(info.messageID, {
+      commandName: 'choose',
+      messageID: info.messageID,
+      author: event.senderID,
+      choices: ['a', 'b', 'c'] // custom data is preserved on Reply
+    });
+  },
+  async onReply({ Reply, event, message }) {
+    const picked = Reply.choices[Number(event.body) - 1];
+    Reply.delete(); // removes the handler
+    return message.reply(picked ? `You picked ${picked}` : 'Not an option.');
+  }
+};
+```
+
+The same store is reachable as `global.GoatBot.onReply` and `global.InstaBot.onReply`.
+Alternatively, `message.setReply(handlerOrData, ttlMs, messageID)` registers
+directly from inside a command; passing an object stores that data and runs the
+command's `onReply` hook. Only the `author` who registered the handler may trigger
+it.
+
 ### Global functions
 
 `global.utils` exposes the Goatbot utility surface, available in every command
