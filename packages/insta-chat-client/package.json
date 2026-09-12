@@ -1,0 +1,27 @@
+{
+  "name": "@lazyneoaz/insta-chat-client",
+  "version": "0.1.0",
+  "description": "Authenticated remote client for a private Instagram chat API server.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lazyneoaz/Insta-Bot-V1-Public.git",
+    "directory": "packages/insta-chat-client"
+  },
+  "homepage": "https://github.com/lazyneoaz/Insta-Bot-V1-Public/tree/main/packages/insta-chat-client",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "instagram",
+    "chat-api",
+    "remote-client"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.2"
+  }
+}
