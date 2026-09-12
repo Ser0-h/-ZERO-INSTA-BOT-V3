@@ -44,6 +44,21 @@ function adaptClient(client) {
     ? () => client.destroy()
     : typeof rawClient.destroy === 'function' ? () => rawClient.destroy() : null;
 
+  // The installed public client may be older than the server. When a method is
+  // missing we fall back to the client's generic `call(operation, args)` path so
+  // every server operation still works. Only when neither exists do we expose an
+  // explicit "unsupported" function that throws a clear message instead of the
+  // opaque "client.x is not a function".
+  const supportsCall = typeof client.call === 'function';
+  const delegate = (name, buildArgs) => (...input) => {
+    const args = buildArgs(...input);
+    if (typeof client[name] === 'function') return client[name](...args);
+    if (supportsCall) return client.call(name, args);
+    const error = new Error(`This chat client does not support "${name}". Update @lazyneoaz/insta-chat-client.`);
+    error.code = 'UNSUPPORTED_OPERATION';
+    return Promise.reject(error);
+  };
+
   return {
     getCurrentUserID: () => client.getCurrentUserID(),
     listen: (callback) => client.listen(callback),
@@ -52,76 +67,78 @@ function adaptClient(client) {
     off: (...args) => client.off(...args),
     once: (...args) => client.once(...args),
     sendMessage: (message, threadID) => sendMessage(normalizeOutgoingMessage(message), threadID),
-    sendMessageBatch: (threadIDs, message) => client.sendMessageBatch(threadIDs, normalizeOutgoingMessage(message)),
-    sendEffects: (threadID, text, effect) => client.sendEffects(
+    sendMessageBatch: delegate('sendMessageBatch', (threadIDs, message) => [threadIDs, normalizeOutgoingMessage(message)]),
+    sendEffects: delegate('sendEffects', (threadID, text, effect) => [
       String(threadID),
       typeof text === 'string' ? normalizeOutgoingText(text) : text,
       effect
-    ),
-    sendAvatarEffect: (threadID, text, effect, options) => client.sendAvatarEffect(
+    ]),
+    sendAvatarEffect: delegate('sendAvatarEffect', (threadID, text, effect, options) => [
       String(threadID),
       typeof text === 'string' ? normalizeOutgoingText(text) : text,
       effect,
       options
-    ),
-    listAvatarEffects: () => client.listAvatarEffects(),
-    listEffects: () => client.listEffects(),
-    stickerMusic: (threadID, queryOrTrack, options) => client.stickerMusic(String(threadID), queryOrTrack, options),
-    sendPhotoFromUrl: (threadID, imageUrl, options) => client.sendPhotoFromUrl(threadID, imageUrl, options),
-    sendVoiceFromUrl: (threadID, audioUrl, options) => client.sendVoiceFromUrl(threadID, audioUrl, options),
-    sendGIF: (threadID, gifUrl, options) => client.sendGIF(threadID, gifUrl, options),
-    sendDirectMessage: (userID, message) => client.sendDirectMessage(userID, normalizeOutgoingMessage(message)),
-    replyToMessage: (threadID, message, messageID) => client.replyToMessage(threadID, normalizeOutgoingMessage(message), messageID),
-    unsendMessage: (messageID, threadID) => client.unsendMessage(messageID, threadID),
-    unsendMessageFast: (messageID, threadID) => typeof client.unsendMessageFast === 'function'
-      ? client.unsendMessageFast(messageID, threadID)
-      : client.unsendMessage(messageID, threadID),
-    unsendMessageBatch: (messageIDs) => client.unsendMessageBatch(messageIDs),
-    unsendLastMessage: (threadID) => client.unsendLastMessage(threadID),
-    sendReaction: (...args) => client.sendReaction(...args),
-    removeReaction: (...args) => client.removeReaction(...args),
-    toggleReaction: (...args) => client.toggleReaction(...args),
-    getThreadInfo: (threadID) => client.getThreadInfo(threadID),
-    getMultipleThreadInfo: (threadIDs) => client.getMultipleThreadInfo(threadIDs),
-    getThreadHistory: (threadID, amount) => client.getThreadHistory(threadID, amount),
-    getNewerMessages: (threadID, timestamp) => client.getNewerMessages(threadID, timestamp),
-    getMessagesAround: (threadID, messageID, limit) => client.getMessagesAround(threadID, messageID, limit),
-    getInbox: (options) => client.getInbox(options),
-    getPendingRequests: (options) => client.getPendingRequests(options),
-    searchThreads: (query, options) => client.searchThreads(query, options),
-    sendTypingIndicator: (threadID) => client.sendTypingIndicator(threadID),
-    stopTypingIndicator: (threadID) => client.stopTypingIndicator(threadID),
-    changeThreadTitle: (threadID, title) => client.changeThreadTitle(threadID, title),
-    changeNickname: (userID, threadID, nickname) => client.changeNickname(userID, threadID, nickname),
-    deleteThread: (threadID) => client.deleteThread(threadID),
-    approveRequest: (threadID) => client.approveRequest(threadID),
-    declineRequest: (threadID) => client.declineRequest(threadID),
-    addUsersToThread: (threadID, userIDs) => client.addUsersToThread(threadID, userIDs),
-    addUserToGroup: (threadID, userID) => client.addUserToGroup(threadID, userID),
-    removeUsersFromThread: (threadID, userIDs) => client.removeUsersFromThread(threadID, userIDs),
-    leaveThread: (threadID) => client.leaveThread(threadID),
-    muteThread: (threadID) => client.muteThread(threadID),
-    unmuteThread: (threadID) => client.unmuteThread(threadID),
-    getUserInfo: (userID) => client.getUserInfo(userID),
-    getProfilePicture: (userID) => client.getProfilePicture(userID),
-    getUserInfoByUsername: (username) => client.getUserInfoByUsername(username),
-    getProfilePictureByUsername: (username) => client.getProfilePictureByUsername(username),
-    setProfilePicture: (imageUrl) => client.setProfilePicture(imageUrl),
-    searchUsers: (query, options) => client.searchUsers(query, options),
-    getMultipleUserInfo: (userIDs) => client.getMultipleUserInfo(userIDs),
-    getFollowers: (userID, options) => client.getFollowers(userID, options),
-    getFollowing: (userID, options) => client.getFollowing(userID, options),
-    followUser: (userID, options) => client.followUser(userID, options),
-    unfollowUser: (userID, options) => client.unfollowUser(userID, options),
-    markAsRead: (threadID, read) => client.markAsRead(threadID, read),
-    markAsUnread: (threadID) => client.markAsUnread(threadID),
-    markMultipleAsRead: (threadIDs) => client.markMultipleAsRead(threadIDs),
-    searchReels: (query, options) => client.searchReels(query, options),
-    searchHashtags: (query, options) => client.searchHashtags(query, options),
-    searchPlaces: (query, options) => client.searchPlaces(query, options),
-    getTrendingSearches: () => client.getTrendingSearches(),
-    getRecentSearches: () => client.getRecentSearches(),
-    clearRecentSearches: () => client.clearRecentSearches(),
+    ]),
+    listAvatarEffects: delegate('listAvatarEffects', () => []),
+    listEffects: delegate('listEffects', () => []),
+    stickerMusic: delegate('stickerMusic', (threadID, queryOrTrack, options) => [String(threadID), queryOrTrack, options]),
+    sendPhotoFromUrl: delegate('sendPhotoFromUrl', (threadID, imageUrl, options) => [threadID, imageUrl, options]),
+    sendVoiceFromUrl: delegate('sendVoiceFromUrl', (threadID, audioUrl, options) => [threadID, audioUrl, options]),
+    sendGIF: delegate('sendGIF', (threadID, gifUrl, options) => [threadID, gifUrl, options]),
+    sendDirectMessage: delegate('sendDirectMessage', (userID, message) => [userID, normalizeOutgoingMessage(message)]),
+    replyToMessage: delegate('replyToMessage', (threadID, message, messageID) => [threadID, normalizeOutgoingMessage(message), messageID]),
+    unsendMessage: delegate('unsendMessage', (messageID, threadID) => [messageID, threadID]),
+    unsendMessageFast: (messageID, threadID) => {
+      if (typeof client.unsendMessageFast === 'function') return client.unsendMessageFast(messageID, threadID);
+      if (supportsCall) return client.call('unsendMessageFast', [messageID, threadID]);
+      return client.unsendMessage(messageID, threadID);
+    },
+    unsendMessageBatch: delegate('unsendMessageBatch', (messageIDs) => [messageIDs]),
+    unsendLastMessage: delegate('unsendLastMessage', (threadID) => [threadID]),
+    sendReaction: delegate('sendReaction', (...args) => args),
+    removeReaction: delegate('removeReaction', (...args) => args),
+    toggleReaction: delegate('toggleReaction', (...args) => args),
+    getThreadInfo: delegate('getThreadInfo', (threadID) => [threadID]),
+    getMultipleThreadInfo: delegate('getMultipleThreadInfo', (threadIDs) => [threadIDs]),
+    getThreadHistory: delegate('getThreadHistory', (threadID, amount) => [threadID, amount]),
+    getNewerMessages: delegate('getNewerMessages', (threadID, timestamp) => [threadID, timestamp]),
+    getMessagesAround: delegate('getMessagesAround', (threadID, messageID, limit) => [threadID, messageID, limit]),
+    getInbox: delegate('getInbox', (options) => [options]),
+    getPendingRequests: delegate('getPendingRequests', (options) => [options]),
+    searchThreads: delegate('searchThreads', (query, options) => [query, options]),
+    sendTypingIndicator: delegate('sendTypingIndicator', (threadID) => [threadID]),
+    stopTypingIndicator: delegate('stopTypingIndicator', (threadID) => [threadID]),
+    changeThreadTitle: delegate('changeThreadTitle', (threadID, title) => [threadID, title]),
+    changeNickname: delegate('changeNickname', (userID, threadID, nickname) => [userID, threadID, nickname]),
+    deleteThread: delegate('deleteThread', (threadID) => [threadID]),
+    approveRequest: delegate('approveRequest', (threadID) => [threadID]),
+    declineRequest: delegate('declineRequest', (threadID) => [threadID]),
+    addUsersToThread: delegate('addUsersToThread', (threadID, userIDs) => [threadID, userIDs]),
+    addUserToGroup: delegate('addUserToGroup', (threadID, userID) => [threadID, userID]),
+    removeUsersFromThread: delegate('removeUsersFromThread', (threadID, userIDs) => [threadID, userIDs]),
+    leaveThread: delegate('leaveThread', (threadID) => [threadID]),
+    muteThread: delegate('muteThread', (threadID) => [threadID]),
+    unmuteThread: delegate('unmuteThread', (threadID) => [threadID]),
+    getUserInfo: delegate('getUserInfo', (userID) => [userID]),
+    getProfilePicture: delegate('getProfilePicture', (userID) => [userID]),
+    getUserInfoByUsername: delegate('getUserInfoByUsername', (username) => [username]),
+    getProfilePictureByUsername: delegate('getProfilePictureByUsername', (username) => [username]),
+    setProfilePicture: delegate('setProfilePicture', (imageUrl) => [imageUrl]),
+    searchUsers: delegate('searchUsers', (query, options) => [query, options]),
+    getMultipleUserInfo: delegate('getMultipleUserInfo', (userIDs) => [userIDs]),
+    getFollowers: delegate('getFollowers', (userID, options) => [userID, options]),
+    getFollowing: delegate('getFollowing', (userID, options) => [userID, options]),
+    followUser: delegate('followUser', (userID, options) => [userID, options]),
+    unfollowUser: delegate('unfollowUser', (userID, options) => [userID, options]),
+    markAsRead: delegate('markAsRead', (threadID, read) => [threadID, read]),
+    markAsUnread: delegate('markAsUnread', (threadID) => [threadID]),
+    markMultipleAsRead: delegate('markMultipleAsRead', (threadIDs) => [threadIDs]),
+    searchReels: delegate('searchReels', (query, options) => [query, options]),
+    searchHashtags: delegate('searchHashtags', (query, options) => [query, options]),
+    searchPlaces: delegate('searchPlaces', (query, options) => [query, options]),
+    getTrendingSearches: delegate('getTrendingSearches', () => []),
+    getRecentSearches: delegate('getRecentSearches', () => []),
+    clearRecentSearches: delegate('clearRecentSearches', () => []),
     getHealth: () => client.getHealth(),
     getServerStatus: typeof client.getServerStatus === 'function' ? () => client.getServerStatus() : null,
     reconnect: typeof client.reconnect === 'function' ? (reason) => client.reconnect(reason) : null,

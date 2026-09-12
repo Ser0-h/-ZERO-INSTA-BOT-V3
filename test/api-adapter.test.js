@@ -122,3 +122,27 @@ test('forwards group participant management methods', async () => {
     ['leave', 'thread-1']
   ]);
 });
+
+test('falls back to client.call for operations a newer server added', async () => {
+  const calls = [];
+  const api = adaptClient({
+    call: async (operation, args) => { calls.push([operation, args]); return { effect: args[2] }; },
+    sendMessage: async () => {}
+  });
+
+  const result = await api.sendAvatarEffect(123, 'hi', 'love', { mediaUrl: 'https://cdn.example/a.gif' });
+  assert.deepEqual(calls, [
+    ['sendAvatarEffect', ['123', 'hi', 'love', { mediaUrl: 'https://cdn.example/a.gif' }]]
+  ]);
+  assert.deepEqual(result, { effect: 'love' });
+});
+
+test('reports a clear error when neither the method nor call fallback exists', async () => {
+  const api = adaptClient({ sendMessage: async () => {} });
+  await assert.rejects(() => api.sendAvatarEffect('thread', 'hi', 'love'), /does not support "sendAvatarEffect"/);
+  try {
+    await api.sendAvatarEffect('thread', 'hi', 'love');
+  } catch (error) {
+    assert.equal(error.code, 'UNSUPPORTED_OPERATION');
+  }
+});

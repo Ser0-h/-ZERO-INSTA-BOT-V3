@@ -33,7 +33,7 @@ module.exports = {
 
     const first = String(args[0] || '').toLowerCase();
     if (!first || first === 'list') {
-      const effects = resolveEffects(api);
+      const effects = await resolveEffects(api);
       return message.reply([
         'Avatar effects',
         '',
@@ -43,9 +43,11 @@ module.exports = {
       ].join('\n'));
     }
 
-    const effect = resolveEffectName(api, first);
-    const available = resolveEffects(api).map((item) => item.name).join(', ');
-    if (!effect) return message.reply(`❌ Unknown avatar effect. Available: ${available}.`);
+    const effect = await resolveEffectName(api, first);
+    if (!effect) {
+      const available = (await resolveEffects(api)).map((item) => item.name).join(', ');
+      return message.reply(`❌ Unknown avatar effect. Available: ${available}.`);
+    }
 
     const mediaUrl = await resolveMediaUrl(args, event, threadID, api);
     const text = args.slice(1).filter((arg) => !isUrl(arg)).join(' ').trim() || `Avatar effect: ${effect}`;
@@ -57,14 +59,17 @@ module.exports = {
       return message.reply(`✅ Avatar effect sent: ${result?.effect || effect}.`);
     } catch (error) {
       await message.react('❌');
+      if (error?.code === 'UNSUPPORTED_OPERATION') {
+        return message.reply('❌ Avatar effects need a newer @lazyneoaz/insta-chat-client. Run "npm install @lazyneoaz/insta-chat-client@latest".');
+      }
       return message.reply(`❌ Avatar effect failed: ${error.message || 'Instagram rejected the request.'}`);
     }
   }
 };
 
-function resolveEffects(api) {
+async function resolveEffects(api) {
   try {
-    const listed = typeof api.listAvatarEffects === 'function' ? api.listAvatarEffects() : null;
+    const listed = typeof api.listAvatarEffects === 'function' ? await api.listAvatarEffects() : null;
     if (Array.isArray(listed) && listed.length) {
       return listed.map((effect) => ({
         name: String(effect.name || '').toLowerCase(),
@@ -78,10 +83,10 @@ function resolveEffects(api) {
   return FALLBACK_EFFECTS.map((effect) => ({ ...effect, aliases: [...effect.aliases] }));
 }
 
-function resolveEffectName(api, value) {
+async function resolveEffectName(api, value) {
   const needle = String(value || '').trim().toLowerCase();
   if (!needle) return null;
-  for (const effect of resolveEffects(api)) {
+  for (const effect of await resolveEffects(api)) {
     if (effect.name === needle || effect.aliases.includes(needle) || String(effect.style) === needle) {
       return effect.name;
     }
