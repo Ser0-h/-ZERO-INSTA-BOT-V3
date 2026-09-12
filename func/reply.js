@@ -9,15 +9,8 @@ function nextResponseEffect() {
   return effect;
 }
 
-async function replyWithEffect({ api, message, threadID }, content) {
-  const effect = nextResponseEffect();
-  if (typeof api?.sendEffects === 'function') {
-    try {
-      return await api.sendEffects(String(threadID), content, effect);
-    } catch (_) {
-      // Fall back to a normal reply when the mobile effect endpoint is unavailable.
-    }
-  }
+async function replyWithEffect({ message }, content) {
+  // The effect endpoint sends a standalone message and cannot preserve the reply target.
   return message.reply(content);
 }
 
