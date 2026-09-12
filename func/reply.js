@@ -11,12 +11,11 @@ function nextResponseEffect() {
 
 async function replyWithEffect({ api, message, threadID }, content) {
   const effect = nextResponseEffect();
-  const replyTo = message?.id || null;
-  if (replyTo && typeof api?.sendEffects === 'function') {
+  if (typeof api?.sendEffects === 'function') {
     try {
-      return await api.sendEffects(String(threadID), content, effect, String(replyTo));
+      return await api.sendEffects(String(threadID), content, effect);
     } catch (_) {
-      // Fall back to a normal threaded reply when the effect endpoint rejects it.
+      // Fall back to a normal reply when the effect endpoint is unavailable.
     }
   }
   return message.reply(content);

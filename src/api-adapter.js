@@ -52,17 +52,11 @@ function adaptClient(client) {
     off: (...args) => client.off(...args),
     once: (...args) => client.once(...args),
     sendMessage: (message, threadID) => sendMessage(normalizeOutgoingMessage(message), threadID),
-    sendEffects: (threadID, text, effect, replyToMessageID) => {
-      const args = [
-        String(threadID),
-        typeof text === 'string' ? normalizeOutgoingText(text) : text,
-        effect
-      ];
-      if (replyToMessageID) args.push(String(replyToMessageID));
-      return typeof client.call === 'function'
-        ? client.call('sendEffects', args)
-        : client.sendEffects(...args);
-    },
+    sendEffects: (threadID, text, effect) => client.sendEffects(
+      String(threadID),
+      typeof text === 'string' ? normalizeOutgoingText(text) : text,
+      effect
+    ),
     stickerMusic: (threadID, queryOrTrack, options) => client.stickerMusic(String(threadID), queryOrTrack, options),
     sendPhotoFromUrl: (threadID, imageUrl, options) => client.sendPhotoFromUrl(threadID, imageUrl, options),
     sendVoiceFromUrl: (threadID, audioUrl, options) => client.sendVoiceFromUrl(threadID, audioUrl, options),
