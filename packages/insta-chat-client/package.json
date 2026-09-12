@@ -8,6 +8,10 @@
     "directory": "packages/insta-chat-client"
   },
   "homepage": "https://github.com/lazyneoaz/Insta-Bot-V1-Public/tree/main/packages/insta-chat-client",
+  "files": [
+    "index.js",
+    "README.md"
+  ],
   "main": "index.js",
   "exports": {
     ".": "./index.js"
@@ -21,6 +25,9 @@
     "remote-client"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "ws": "^8.18.2"
   }

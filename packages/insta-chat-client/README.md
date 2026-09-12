@@ -20,3 +20,13 @@ await api.sendMessage('Hello', 'thread-id');
 ```
 
 The server token is a bearer credential. Keep it in an environment variable and never commit it.
+
+## Publish
+
+From the package directory, sign in to npm and run:
+
+```bash
+npm publish --access public
+```
+
+If the `@lazyneoaz` npm scope is not yours, change the package name before publishing.
