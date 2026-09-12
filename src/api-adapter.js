@@ -91,6 +91,7 @@ function adaptClient(client) {
     getProfilePicture: (userID) => client.getProfilePicture(userID),
     getUserInfoByUsername: (username) => client.getUserInfoByUsername(username),
     getProfilePictureByUsername: (username) => client.getProfilePictureByUsername(username),
+    setProfilePicture: (imageUrl) => client.setProfilePicture(imageUrl),
     searchUsers: (query, options) => client.searchUsers(query, options),
     getMultipleUserInfo: (userIDs) => client.getMultipleUserInfo(userIDs),
     getFollowers: (userID, options) => client.getFollowers(userID, options),

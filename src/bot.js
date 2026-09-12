@@ -191,7 +191,9 @@ class InstagramBot {
       operation: async () => {
         if (this.stopping || this.realtimeConnected) return this;
         await this.waitForChatApi();
-        this.api.resetSession?.();
+        // Re-open the event stream on the existing authenticated server
+        // session. Clearing it here would create a second Instagram client
+        // during a transient socket loss and needlessly repeat authentication.
         await this.api.listen(this.eventHandler);
         if (!this.realtimeConnected) throw new Error('Chat API realtime connection did not become ready.');
         return this;
