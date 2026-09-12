@@ -91,7 +91,7 @@ class InstagramBot {
     });
     this.api.on('sessionExpired', () => {
       this.sessionExpired = true;
-      this.logger.error('Private chat API session expired. Refresh the private server session and restart.');
+      this.logger.error('Instagram session expired. Refresh account.txt and restart.');
       void this.stop().catch((error) => {
         this.logger.error('Could not stop safely after session expiry:', error.message);
       });

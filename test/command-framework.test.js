@@ -530,10 +530,10 @@ test('participant commands resolve usernames and forward user IDs', async () => 
   ]);
 });
 
-test('login module exposes the remote chat API login function', () => {
+test('login module exposes the local cookie-file login function', () => {
   const source = fs.readFileSync(path.join(__dirname, '../bot/login/login.js'), 'utf8');
-  assert.match(source, /@lazyneoaz\/insta-chat-client/);
-  assert.match(source, /module\.exports = \{ login \};/);
+  assert.match(source, /@neoaz07\/nkxica/);
+  assert.match(source, /config\.accountFile/);
 });
 
 test('language resources provide friendly fallback messages', () => {

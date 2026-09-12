@@ -7,6 +7,7 @@ npm-debug.log*
 config.local.json
 account.txt
 data/bot-state.json
+data/session.json
 data/*.db
 *.tgz
 

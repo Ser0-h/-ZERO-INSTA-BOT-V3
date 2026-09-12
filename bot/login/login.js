@@ -1,17 +1,24 @@
 'use strict';
 
-const { createClient } = require('@lazyneoaz/insta-chat-client');
+const fs = require('fs/promises');
+const nkxica = require('@neoaz07/nkxica');
+const { adaptClient } = require('../../src/api-adapter');
 
 async function login({ config }) {
-  if (!config.chatApi.url || !config.chatApi.token) {
-    throw new Error('Chat API settings are missing. Set CHAT_API_URL and CHAT_API_TOKEN.');
+  let cookies;
+  try {
+    cookies = await fs.readFile(config.accountFile, 'utf8');
+  } catch (error) {
+    throw new Error(`Could not read Instagram cookie file ${config.accountFile}: ${error.message}`);
   }
-  return createClient({
-    baseUrl: config.chatApi.url,
-    token: config.chatApi.token,
-    timeoutMs: config.chatApi.timeoutMs,
-    reconnectDelayMs: config.chatApi.reconnectDelayMs
+  if (!cookies.trim()) throw new Error(`Instagram cookie file is empty: ${config.accountFile}`);
+
+  const client = await nkxica(cookies, {
+    sessionFile: config.sessionFile,
+    autoSaveSession: true,
+    logLevel: config.logLevel
   });
+  return adaptClient(client);
 }
 
 module.exports = { login };

@@ -27,8 +27,6 @@
   "maxThreads": 5000,
   "dataDir": "./data",
   "stateFile": "./data/bot-state.json",
-  "chatApi": {
-    "url": "",
-    "token": ""
-  }
+  "accountFile": "./account.txt",
+  "sessionFile": "./data/session.json"
 }

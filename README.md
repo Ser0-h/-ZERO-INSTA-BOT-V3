@@ -1,18 +1,14 @@
 # Insta Bot V1
 
-An Instagram command bot that connects to a separately hosted private chat API.
-The public bot does not contain the Instagram protocol client, cookies, or session files.
+An Instagram command bot that authenticates directly with a local cookie file.
+The cookie file and generated session are ignored by Git.
 
-## Architecture
+## Authentication
 
 ```text
-Public Insta-Bot-V1
+Insta-Bot-V1
         |
-        | HTTPS + authenticated WebSocket
-        v
-Private Insta-Chat-API-Server
-        |
-        | private Instagram session and MQTT/API client
+        | account.txt cookie file
         v
 Instagram
 ```
@@ -23,16 +19,14 @@ and sanitized realtime events cross the API boundary.
 ## Requirements
 
 - Node.js 20 or newer.
-- A running private `Insta-Chat-API-Server`.
-- The server URL and bearer token in environment variables.
+- A Netscape-format Instagram cookie export saved as `account.txt`.
 
 ## Configure
 
-Set these variables before starting the public bot:
+Place the cookie export in the project root:
 
 ```bash
-CHAT_API_URL=https://your-private-chat-api.example.com
-CHAT_API_TOKEN=the-same-random-token-used-by-the-private-server
+cp /path/to/account.txt ./account.txt
 ```
 
 Set `adminIds` and `ownerId` in a local configuration file or environment-specific deployment
@@ -47,11 +41,9 @@ npm start
 
 ## Security
 
-- Never put Instagram cookies in this repository.
-- Never put `CHAT_API_TOKEN` in `config.json`, source code, issues, or logs.
-- Keep the private server repository and its `vendor/` directory private.
-- Use HTTPS for the private server URL.
-- Rotate the API token if it is ever exposed.
+- Never commit `account.txt` or `data/session.json`.
+- Keep cookie exports out of issues, logs, and screenshots.
+- Refresh the cookie file when Instagram reports an expired session.
 
 ## Commands
 
@@ -59,7 +51,4 @@ The command framework supports prefix commands, aliases, permissions, cooldowns,
 reaction handlers, events, hot reload, and persistent bot state. The existing command set includes
 help, identity, history, media, effects, user management, broadcasts, and diagnostics.
 
-## Related packages
-
-- `@lazyneoaz/insta-chat-client`: public npm client used by this bot.
-- `Insta-Chat-API-Server`: private service that stores the Instagram session and talks to Instagram.
+The bot uses `@neoaz07/nkxica` directly for cookie authentication and realtime messaging.
