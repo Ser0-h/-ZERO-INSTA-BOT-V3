@@ -74,7 +74,7 @@ value in `.env` and update it when the server publishes a replacement.
 Start the bot:
 
 ```bash
-npm start
+node nkx.js
 ```
 
 The bot will keep the process alive while the Chat API is unavailable. It logs each retry and backs
@@ -145,7 +145,7 @@ There are two independent limits:
 - The `GET /healthz` and `OPTIONS` routes are not counted.
 - WebSocket event traffic is not counted by this HTTP request counter.
 - Exceeding the limit returns HTTP `429` with code `RATE_LIMITED`.
-- The server allows `10` authenticated sessions by default; excess login attempts return `SESSION_LIMIT`.
+- The free-tier server allows `6` authenticated sessions by default; excess login attempts return `SESSION_LIMIT`.
 
 ### Instagram upstream protection
 
@@ -188,7 +188,6 @@ Created and maintained by **Saifullah Al Neoaz (NEOKEX)**.
 - GitHub: [@lazyneoaz](https://github.com/lazyneoaz)
 - Public bot: [InstaBot-V1](https://github.com/lazyneoaz/InstaBot-V1)
 - Chat client: [insta-chat-client](https://github.com/lazyneoaz/Insta-Chat-API-Client)
-- Private server: [Insta-Chat-API-Server](https://github.com/lazyneoaz/Insta-Chat-API-Server)
 
 This project uses the open-source `nkxica` Instagram client layer inside the private server. Please
 respect Instagram's terms, rate limits, and account-safety requirements.
