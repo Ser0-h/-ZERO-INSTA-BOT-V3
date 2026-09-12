@@ -746,11 +746,11 @@ test('avatar effect command lists effects and sends the resolved style', async (
   assert.equal(sent[0][0], 'thread-1');
   assert.equal(sent[0][1], 'hello');
   assert.equal(sent[0][2], 'love');
-  assert.match(sent[0][3].media, /^data:image\/gif;base64,/);
+  assert.equal(sent[0][3], undefined);
   assert.match(replies[1], /Avatar effect sent: love/);
 });
 
-test('avatar effect command prefers an explicit media URL over the built-in clip', async () => {
+test('avatar effect command forwards an explicit media URL when supplied', async () => {
   const avatarCommand = require('../scripts/cmds/aveffect');
   const sent = [];
   const context = {
@@ -770,14 +770,6 @@ test('avatar effect command prefers an explicit media URL over the built-in clip
     'love',
     { mediaUrl: 'https://cdn.example/clip.gif' }
   ]);
-});
-
-test('effect-media exposes a bundled animation for every avatar effect', () => {
-  const { getEffectMedia } = require('../src/effect-media');
-  for (const effect of ['love', 'angry', 'laugh', 'cry']) {
-    assert.match(getEffectMedia(effect), /^data:image\/gif;base64,/);
-  }
-  assert.equal(getEffectMedia('nonexistent'), null);
 });
 
 test('avatar effect command rejects unknown effects', async () => {

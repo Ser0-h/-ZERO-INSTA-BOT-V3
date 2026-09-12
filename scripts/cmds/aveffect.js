@@ -4,7 +4,6 @@
 require('../../src/global-utils');
 
 const { extractImageUrl, findReplyTarget } = global.utils;
-const { getEffectMedia } = require('../../src/effect-media');
 
 const FALLBACK_EFFECTS = Object.freeze([
   { name: 'love', style: 1000, aliases: ['heart', 'hearts', 'kiss'] },
@@ -22,10 +21,9 @@ module.exports = {
     cooldown: 8,
     role: 0,
     description: 'Send a message with an Instagram avatar (power-up) effect.',
-    longDescription: 'Uploads an animation and sends it as an avatar power-up effect. '
-      + 'A built-in animated clip is used by default; override it with a public URL, an '
-      + 'inline base64/data URL, or a reply to a GIF/video. Set AVEFFECT_MEDIA_<NAME> to '
-      + 'pin a custom animation per effect.',
+    longDescription: 'Sends a message carrying an Instagram avatar power-up effect. The server '
+      + 'ships the effect animations, so no media is needed; optionally pass a public URL or '
+      + 'reply to a GIF/video to use your own clip.',
     usage: '{pn} <love|angry|laugh|cry> <message> [media URL] | {pn} list'
   },
 
@@ -54,16 +52,10 @@ module.exports = {
 
     const mediaUrl = await resolveMediaUrl(args, event, threadID, api);
     const text = args.slice(1).filter((arg) => !isUrl(arg)).join(' ').trim() || `Avatar effect: ${effect}`;
-    const options = mediaUrl
-      ? { mediaUrl }
-      : (() => {
-        const builtin = getEffectMedia(effect);
-        return builtin ? { media: builtin } : undefined;
-      })();
 
     try {
       await message.react('⌛');
-      const result = await api.sendAvatarEffect(threadID, text, effect, options);
+      const result = await api.sendAvatarEffect(threadID, text, effect, mediaUrl ? { mediaUrl } : undefined);
       await message.react('✅');
       return message.reply(`✅ Avatar effect sent: ${result?.effect || effect}.`);
     } catch (error) {
