@@ -1,0 +1,14 @@
+# Runtime and dependency files
+node_modules/
+npm-debug.log*
+
+# Local configuration and credentials
+.env
+config.local.json
+account.txt
+data/bot-state.json
+data/*.db
+*.tgz
+
+# Temporary files
+*.tmp

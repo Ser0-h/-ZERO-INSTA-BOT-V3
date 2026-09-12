@@ -1,0 +1,8 @@
+{
+  "envGlobal": "func",
+  "envCommands": "scripts/cmds",
+  "envEvents": "scripts/events",
+  "envLangs": "scripts/langs",
+  "watchCommands": true,
+  "watchEvents": true
+}
