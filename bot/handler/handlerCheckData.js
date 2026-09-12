@@ -48,6 +48,15 @@ function normalizeEvent(error, event) {
     || null;
   normalized.replyTo = replyTarget?.toString() || null;
   if (normalized.type === 'message_reaction') {
+    const reactionObject = normalized.reaction && typeof normalized.reaction === 'object'
+      ? normalized.reaction
+      : null;
+    normalized.reactionStatus = normalized.reactionStatus
+      || normalized.reaction_status
+      || reactionObject?.reactionStatus
+      || reactionObject?.reaction_status
+      || reactionObject?.status
+      || null;
     const reactionMessageID = normalized.reactionMessageID
       || normalized.reactionMessageId
       || normalized.reaction?.message_id
@@ -57,6 +66,7 @@ function normalizeEvent(error, event) {
       || normalized.reactionMessageID
       || normalized.reaction?.item_id
       || normalized.reaction?.itemId
+      || normalized.messageID
       || null;
     normalized.reactionMessageID = reactionMessageID?.toString() || null;
     if (normalized.targetMessageID) normalized.messageID = String(normalized.targetMessageID);

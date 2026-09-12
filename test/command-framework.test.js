@@ -204,11 +204,54 @@ test('normalizes reaction events to the message being reacted to', () => {
     type: 'message_reaction',
     threadID: 'thread',
     messageID: 'reaction-item',
-    targetMessageID: 'target-message'
+    targetMessageID: 'target-message',
+    reactionMessageID: 'reaction-item',
+    reaction: '❤️',
+    reactionStatus: 'created'
   });
 
   assert.equal(result.event.messageID, 'target-message');
   assert.equal(result.event.reactionMessageID, 'reaction-item');
+  assert.equal(result.event.reactionStatus, 'created');
+});
+
+test('routes created reactions and ignores deleted reaction updates', async () => {
+  let calls = 0;
+  const command = {
+    config: { name: 'watch', aliases: [], role: 0, cooldown: 0 },
+    async onReaction() { calls += 1; }
+  };
+  const router = new CommandRouter({
+    api: {},
+    config: makeConfig(),
+    store: makeStore(),
+    commands: new Map([['watch', command]]),
+    aliases: new Map(),
+    logger
+  });
+  router.reactionHandlers.set('target-message', {
+    commandName: 'watch',
+    expiresAt: Date.now() + 60_000
+  });
+
+  await router.handle({
+    type: 'message_reaction',
+    threadID: 'thread',
+    senderID: 'user',
+    messageID: 'target-message',
+    reaction: '❤️',
+    reactionStatus: 'deleted'
+  });
+  await router.handle({
+    type: 'message_reaction',
+    threadID: 'thread',
+    senderID: 'user',
+    messageID: 'target-message',
+    reaction: '❤️',
+    reactionStatus: 'created'
+  });
+
+  assert.equal(calls, 1);
 });
 
 test('normalizes reply targets from realtime payload aliases', () => {

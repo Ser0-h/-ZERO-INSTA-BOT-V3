@@ -415,6 +415,8 @@ class CommandRouter {
 
   async handleReaction(event) {
     if (await this.handleAdminUnsendReaction(event)) return true;
+    const reactionStatus = event.reactionStatus || event.reaction_status;
+    if (reactionStatus && reactionStatus !== 'created') return false;
     const key = event.messageID && String(event.messageID);
     const registered = key && this.reactionHandlers.get(key);
     if (!registered || registered.expiresAt <= Date.now()) return false;

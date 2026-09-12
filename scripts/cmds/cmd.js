@@ -220,7 +220,8 @@ function getMessageID(result) {
 function isCreatedReaction(reaction) {
   if (!reaction) return false;
   if (typeof reaction === 'string') return true;
-  return reaction.status === undefined || reaction.status === 'created';
+  const status = reaction.status || reaction.reactionStatus || reaction.reaction_status;
+  return status === undefined || status === 'created';
 }
 
 module.exports = { ...module.exports, extractInlineCode, normalizeFileName, normalizeURL };
