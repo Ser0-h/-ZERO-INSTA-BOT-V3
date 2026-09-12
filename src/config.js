@@ -55,6 +55,8 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     }
   }
 
+  const chatApi = settings.chatApi && typeof settings.chatApi === 'object' ? settings.chatApi : {};
+
   return {
     rootDir,
     configPath,
@@ -75,7 +77,6 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     dataDir: resolveFromRoot(rootDir, settings.dataDir, 'data'),
     stateFile: resolveFromRoot(rootDir, settings.stateFile, 'data/bot-state.json'),
     accountFile: resolveFromRoot(rootDir, settings.accountFile, 'account.txt'),
-    sessionFile: resolveFromRoot(rootDir, settings.sessionFile, 'data/session.json'),
     prefix: stringFromValue(settings.prefix, '!'),
     adminIds: new Set(listFromValue(settings.adminIds)),
     ownerId: stringFromValue(settings.ownerId),
@@ -92,7 +93,13 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     maxCooldownEntries: Math.max(1, numberFromValue(settings.maxCooldownEntries, 10000)),
     maxTrackedThreads: Math.max(1, numberFromValue(settings.maxTrackedThreads, 10000)),
     maxUsers: Math.max(1, numberFromValue(settings.maxUsers, 10000)),
-    maxThreads: Math.max(1, numberFromValue(settings.maxThreads, 5000))
+    maxThreads: Math.max(1, numberFromValue(settings.maxThreads, 5000)),
+    chatApi: {
+      url: stringFromValue(process.env.CHAT_API_URL, stringFromValue(chatApi.url)),
+      token: stringFromValue(process.env.CHAT_API_TOKEN, stringFromValue(chatApi.token)),
+      timeoutMs: Math.max(1000, numberFromValue(process.env.CHAT_API_TIMEOUT_MS ?? chatApi.timeoutMs, 30000)),
+      reconnectDelayMs: Math.max(500, numberFromValue(process.env.CHAT_API_RECONNECT_DELAY_MS ?? chatApi.reconnectDelayMs, 3000))
+    }
   };
 }
 

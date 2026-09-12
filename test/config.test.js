@@ -16,7 +16,7 @@ test('loads bot settings from config.json', () => {
     ownerId: '789',
     autoReply: true,
     accountFile: './cookies.txt',
-    sessionFile: './data/custom-session.json'
+    chatApi: { url: 'https://chat.example.test', timeoutMs: 5000 }
   }));
 
   const config = loadConfig(rootDir);
@@ -27,7 +27,9 @@ test('loads bot settings from config.json', () => {
   assert.equal(config.ownerId, '789');
   assert.equal(config.autoReply, true);
   assert.equal(config.accountFile, path.join(rootDir, 'cookies.txt'));
-  assert.equal(config.sessionFile, path.join(rootDir, 'data/custom-session.json'));
+  assert.equal(config.chatApi.url, 'https://chat.example.test');
+  assert.equal(config.chatApi.timeoutMs, 5000);
+  assert.equal(config.chatApi.reconnectDelayMs, 3000);
   assert.equal(config.allowThreadAdmins, true);
   assert.equal(config.maxHandlerEntries, 2000);
   assert.equal(config.commandsPath, path.join(rootDir, 'scripts/cmds'));

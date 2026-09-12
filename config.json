@@ -28,5 +28,8 @@
   "dataDir": "./data",
   "stateFile": "./data/bot-state.json",
   "accountFile": "./account.txt",
-  "sessionFile": "./data/session.json"
+  "chatApi": {
+    "url": "https://nkx-ica.neokex.xyz",
+    "token": ""
+  }
 }

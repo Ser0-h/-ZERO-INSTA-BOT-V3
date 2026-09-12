@@ -1,7 +1,7 @@
 {
   "name": "insta-bot-v1",
   "version": "0.1.0",
-  "description": "An Instagram command bot powered by a local cookie-authenticated client.",
+  "description": "An Instagram command bot using a local cookie file and private chat API.",
   "author": "Saifullah Al Neoaz (NEOKEX)",
   "homepage": "https://neokex.xyz",
   "repository": {
@@ -19,7 +19,7 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@neoaz07/nkxica": "^1.0.4",
+    "@lazyneoaz/insta-chat-client": "^0.1.0",
     "axios": "^1.9.0"
   }
 }

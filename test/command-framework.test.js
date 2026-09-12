@@ -530,9 +530,9 @@ test('participant commands resolve usernames and forward user IDs', async () => 
   ]);
 });
 
-test('login module exposes the local cookie-file login function', () => {
+test('login module exposes the cookie-to-API login function', () => {
   const source = fs.readFileSync(path.join(__dirname, '../bot/login/login.js'), 'utf8');
-  assert.match(source, /@neoaz07\/nkxica/);
+  assert.match(source, /@lazyneoaz\/insta-chat-client/);
   assert.match(source, /config\.accountFile/);
 });
 
