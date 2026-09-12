@@ -40,3 +40,16 @@ test('requires config.json', () => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'insta-bot-config-'));
   assert.throws(() => loadConfig(rootDir), /Missing config\.json/);
 });
+
+test('uses ACCOUNT_FILE only as an optional override', () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'insta-bot-config-'));
+  fs.writeFileSync(path.join(rootDir, 'config.json'), JSON.stringify({ accountFile: './account.txt' }));
+  const previous = process.env.ACCOUNT_FILE;
+  process.env.ACCOUNT_FILE = './runtime-cookies.txt';
+  try {
+    assert.equal(loadConfig(rootDir).accountFile, path.join(rootDir, 'runtime-cookies.txt'));
+  } finally {
+    if (previous === undefined) delete process.env.ACCOUNT_FILE;
+    else process.env.ACCOUNT_FILE = previous;
+  }
+});

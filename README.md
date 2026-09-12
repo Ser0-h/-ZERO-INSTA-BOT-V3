@@ -74,7 +74,7 @@ value in `.env` and update it when the server publishes a replacement.
 Start the bot:
 
 ```bash
-node nkx.js
+npm start
 ```
 
 The bot will keep the process alive while the Chat API is unavailable. It logs each retry and backs
@@ -111,8 +111,9 @@ docker run --rm \
 `npm install` during its build, so dependencies are generated inside the image. Do not copy cookies
 or `.env` into the image.
 
-For Render or Railway, provide the cookie export as a secret file and set `ACCOUNT_FILE` to the
-mounted path shown by that platform. Keep the service port set to the platform-provided `PORT`.
+For Render, add the cookie export as a Secret File named `account.txt`; the bot automatically checks
+`/etc/secrets/account.txt` when the root file is not present. `ACCOUNT_FILE` is optional and can
+override that path for other platforms. Keep the service port set to the platform-provided `PORT`.
 
 ## Configuration
 
@@ -120,7 +121,7 @@ The normal settings live in `config.json`. Environment variables override the Ch
 
 | Variable | Default | Purpose |
 | --- | ---: | --- |
-| `ACCOUNT_FILE` | `./account.txt` | Path to the Netscape cookie file; use the platform secret-file path in containers |
+| `ACCOUNT_FILE` | auto-detected | Optional path override; root `account.txt` is preferred, then `/etc/secrets/account.txt` |
 | `PORT` | `10000` | HTTP health-server port supplied by Render or Railway |
 | `CHAT_API_URL` | `https://nkx-ica.neokex.xyz` | Private Chat API base URL |
 | `CHAT_API_TOKEN` | shared token | Bearer token for the Chat API |
@@ -187,8 +188,9 @@ Created and maintained by **Saifullah Al Neoaz (NEOKEX)**.
 - GitHub: [@lazyneoaz](https://github.com/lazyneoaz)
 - Public bot: [InstaBot-V1](https://github.com/lazyneoaz/InstaBot-V1)
 - Chat client: [insta-chat-client](https://github.com/lazyneoaz/Insta-Chat-API-Client)
+- Private server: [Insta-Chat-API-Server](https://github.com/lazyneoaz/Insta-Chat-API-Server)
 
-This project uses the Instagram client layer inside the private server. Please
+This project uses the open-source `nkxica` Instagram client layer inside the private server. Please
 respect Instagram's terms, rate limits, and account-safety requirements.
 
 ## License

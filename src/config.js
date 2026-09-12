@@ -76,7 +76,7 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     eventCommandUnload: listFromValue(commandSettings.eventCommandUnload),
     dataDir: resolveFromRoot(rootDir, settings.dataDir, 'data'),
     stateFile: resolveFromRoot(rootDir, settings.stateFile, 'data/bot-state.json'),
-    accountFile: resolveFromRoot(rootDir, process.env.ACCOUNT_FILE ?? settings.accountFile, 'account.txt'),
+    accountFile: resolveAccountFile(rootDir, settings.accountFile),
     prefix: stringFromValue(settings.prefix, '!'),
     adminIds: new Set(listFromValue(settings.adminIds)),
     ownerId: stringFromValue(settings.ownerId),
@@ -103,6 +103,18 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
       maxRetryDelayMs: Math.max(1000, numberFromValue(process.env.CHAT_API_MAX_RETRY_DELAY_MS ?? chatApi.maxRetryDelayMs, 60000))
     }
   };
+}
+
+function resolveAccountFile(rootDir, configuredValue) {
+  const configured = process.env.ACCOUNT_FILE;
+  if (configured) return resolveFromRoot(rootDir, configured, 'account.txt');
+
+  const localPath = resolveFromRoot(rootDir, configuredValue, 'account.txt');
+  const usesDefaultPath = !configuredValue || ['./account.txt', 'account.txt'].includes(String(configuredValue).trim());
+  if (usesDefaultPath && !fs.existsSync(localPath) && fs.existsSync('/etc/secrets/account.txt')) {
+    return '/etc/secrets/account.txt';
+  }
+  return localPath;
 }
 
 module.exports = { loadConfig, listFromValue };
