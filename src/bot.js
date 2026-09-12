@@ -423,6 +423,10 @@ class InstagramBot {
       if (global.NkxBot === this.globalRegistry) delete global.NkxBot;
       if (global.InstaBot === this.globalRegistry) delete global.InstaBot;
       if (global.GoatBot === this.globalRegistry) delete global.GoatBot;
+      if (global.utils === this.globalUtils) {
+        this.globalUtils = createGlobalUtils();
+        global.utils = this.globalUtils;
+      }
       this.started = false;
     })();
     return this.stopPromise.finally(() => {
