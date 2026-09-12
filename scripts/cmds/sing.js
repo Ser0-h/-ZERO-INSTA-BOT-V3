@@ -1,9 +1,6 @@
 'use strict';
 
-const axios = require('axios');
 const { setProgress } = require('../../func/progress');
-
-const BASE_URL = 'https://play.nkx.lol';
 
 module.exports = {
   config: {
@@ -22,19 +19,13 @@ module.exports = {
     await setProgress(message, '⌛');
 
     try {
-      const response = await axios.get(`${BASE_URL}/search`, {
-        params: { q: query, limit: 1 },
-        timeout: 25000,
-        validateStatus: () => true
-      });
-      if (response.status >= 400) throw new Error(`Search failed (status ${response.status}).`);
-      const selected = response.data?.results?.[0];
-      if (!selected) throw new Error('No songs found for your query.');
-      const streamUrl = selected.audio_cdn_url || selected.audio_url;
-      if (!streamUrl) throw new Error('No playable stream was found for that result.');
+      const result = await api.stickerMusic(threadID, query, { send: false, initialize: false });
+      const track = result?.track || {};
+      const audioUrl = getAudioUrl(track);
+      if (!audioUrl) throw new Error('Instagram did not return a playable audio URL for that song.');
 
-      await api.sendVoiceFromUrl(threadID, streamUrl, {
-        title: selected.title || query,
+      await api.sendVoiceFromUrl(threadID, audioUrl, {
+        title: track.title || query,
         replyTo: event?.messageID || null
       });
       await setProgress(message, '✅');
@@ -44,3 +35,13 @@ module.exports = {
     }
   }
 };
+
+function getAudioUrl(track) {
+  return track?.audioURL
+    || track?.audioUrl
+    || track?.progressiveDownloadURL
+    || track?.progressive_download_url
+    || null;
+}
+
+module.exports = { ...module.exports, getAudioUrl };

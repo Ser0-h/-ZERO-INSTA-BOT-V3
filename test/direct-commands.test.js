@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const effectCommand = require('../scripts/cmds/effect');
 const musicCommand = require('../scripts/cmds/stickermusic');
+const singCommand = require('../scripts/cmds/sing');
 const alldlCommand = require('../scripts/cmds/alldl');
 const cmdCommand = require('../scripts/cmds/cmd');
 const uptimeCommand = require('../scripts/cmds/uptime');
@@ -35,6 +36,33 @@ test('stickermusic command uses the query and exposes the sm alias', async () =>
   assert.deepEqual(musicCommand.config.aliases, ['sm']);
   assert.deepEqual(calls, [['123456789', 'some song']]);
   assert.deepEqual(replies, ['✅ Music sticker sent: Song by Artist.']);
+});
+
+test('sing searches Instagram music and sends its direct audio URL', async () => {
+  const calls = [];
+  const replies = [];
+  await singCommand.onStart({
+    api: {
+      stickerMusic: async (...args) => {
+        calls.push(['search', ...args]);
+        return { track: { title: 'Song', audioURL: 'https://i.instagram.com/audio/full.m4a' } };
+      },
+      sendVoiceFromUrl: async (...args) => calls.push(['voice', ...args])
+    },
+    args: ['some', 'song'],
+    event: { messageID: 'message-1' },
+    message: { reply: async (text) => replies.push(text) },
+    threadID: '123456789'
+  });
+
+  assert.deepEqual(calls, [
+    ['search', '123456789', 'some song', { send: false, initialize: false }],
+    ['voice', '123456789', 'https://i.instagram.com/audio/full.m4a', {
+      title: 'Song',
+      replyTo: 'message-1'
+    }]
+  ]);
+  assert.deepEqual(replies, []);
 });
 
 test('alldl prefers an MP4 video and exposes download aliases', () => {
