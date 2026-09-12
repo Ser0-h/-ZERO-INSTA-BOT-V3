@@ -29,6 +29,7 @@ server restart invalidates the previous realtime session.
 - Command aliases, permissions, cooldowns, reply handlers, reaction handlers, and hot reload.
 - Persistent bot state with bounded history and thread/user storage.
 - Shared API client with normalized messages, media helpers, reactions, effects, and group controls.
+- Default `alldl` media downloader for supported public URLs.
 - Explicit shutdown for `SIGINT` and `SIGTERM`.
 
 ## Architecture
@@ -78,6 +79,16 @@ npm start
 
 The bot will keep the process alive while the Chat API is unavailable. It logs each retry and backs
 off from `CHAT_API_RETRY_DELAY_MS` up to `CHAT_API_MAX_RETRY_DELAY_MS`.
+
+Media downloads use the default `alldl` command:
+
+```text
+!alldl <public URL>
+```
+
+The command is loaded automatically from `scripts/cmds/alldl.js` and uses the bot's downloader API.
+It selects the best supported video result, with image and audio fallbacks when returned by the
+service.
 
 ## Docker Deployment
 
