@@ -55,9 +55,23 @@ Set the owner and bot administrators in `config.json`:
 | Variable | Purpose |
 | --- | --- |
 | `ACCOUNT_FILE` | Instagram cookie export path |
-| `CHAT_API_URL` | Private Chat API URL |
+| `CHAT_API_URL` | Chat API URL |
 | `CHAT_API_TOKEN` | Private Chat API bearer token |
 | `PORT` | Health endpoint port |
+
+### Promotional Access
+
+The Chat API URL is:
+
+```text
+https://nkx-ica.neokex.xyz
+```
+
+The public promotional Chat API token is:
+
+```text
+chat.api.toke.neokex.ica.token.can.change.a9y.2ime.ok
+```
 
 ## Commands
 
