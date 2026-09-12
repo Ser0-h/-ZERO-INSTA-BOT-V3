@@ -52,11 +52,20 @@ function adaptClient(client) {
     off: (...args) => client.off(...args),
     once: (...args) => client.once(...args),
     sendMessage: (message, threadID) => sendMessage(normalizeOutgoingMessage(message), threadID),
+    sendMessageBatch: (threadIDs, message) => client.sendMessageBatch(threadIDs, normalizeOutgoingMessage(message)),
     sendEffects: (threadID, text, effect) => client.sendEffects(
       String(threadID),
       typeof text === 'string' ? normalizeOutgoingText(text) : text,
       effect
     ),
+    sendAvatarEffect: (threadID, text, effect, options) => client.sendAvatarEffect(
+      String(threadID),
+      typeof text === 'string' ? normalizeOutgoingText(text) : text,
+      effect,
+      options
+    ),
+    listAvatarEffects: () => client.listAvatarEffects(),
+    listEffects: () => client.listEffects(),
     stickerMusic: (threadID, queryOrTrack, options) => client.stickerMusic(String(threadID), queryOrTrack, options),
     sendPhotoFromUrl: (threadID, imageUrl, options) => client.sendPhotoFromUrl(threadID, imageUrl, options),
     sendVoiceFromUrl: (threadID, audioUrl, options) => client.sendVoiceFromUrl(threadID, audioUrl, options),
@@ -67,6 +76,8 @@ function adaptClient(client) {
     unsendMessageFast: (messageID, threadID) => typeof client.unsendMessageFast === 'function'
       ? client.unsendMessageFast(messageID, threadID)
       : client.unsendMessage(messageID, threadID),
+    unsendMessageBatch: (messageIDs) => client.unsendMessageBatch(messageIDs),
+    unsendLastMessage: (threadID) => client.unsendLastMessage(threadID),
     sendReaction: (...args) => client.sendReaction(...args),
     removeReaction: (...args) => client.removeReaction(...args),
     toggleReaction: (...args) => client.toggleReaction(...args),
@@ -81,6 +92,10 @@ function adaptClient(client) {
     sendTypingIndicator: (threadID) => client.sendTypingIndicator(threadID),
     stopTypingIndicator: (threadID) => client.stopTypingIndicator(threadID),
     changeThreadTitle: (threadID, title) => client.changeThreadTitle(threadID, title),
+    changeNickname: (userID, threadID, nickname) => client.changeNickname(userID, threadID, nickname),
+    deleteThread: (threadID) => client.deleteThread(threadID),
+    approveRequest: (threadID) => client.approveRequest(threadID),
+    declineRequest: (threadID) => client.declineRequest(threadID),
     addUsersToThread: (threadID, userIDs) => client.addUsersToThread(threadID, userIDs),
     addUserToGroup: (threadID, userID) => client.addUserToGroup(threadID, userID),
     removeUsersFromThread: (threadID, userIDs) => client.removeUsersFromThread(threadID, userIDs),
@@ -108,6 +123,13 @@ function adaptClient(client) {
     getRecentSearches: () => client.getRecentSearches(),
     clearRecentSearches: () => client.clearRecentSearches(),
     getHealth: () => client.getHealth(),
+    getServerStatus: typeof client.getServerStatus === 'function' ? () => client.getServerStatus() : null,
+    reconnect: typeof client.reconnect === 'function' ? (reason) => client.reconnect(reason) : null,
+    isConnected: typeof client.isConnected === 'function' ? () => client.isConnected() : null,
+    status: typeof client.status === 'function' ? () => client.status() : null,
+    waitUntilConnected: typeof client.waitUntilConnected === 'function'
+      ? (timeoutMs) => client.waitUntilConnected(timeoutMs)
+      : null,
     saveSession: (filePath) => client.saveSession(filePath),
     stopTask: (name) => client.stopTask(name),
     resetSession: () => {

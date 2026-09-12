@@ -21,7 +21,10 @@ async function login({ config }) {
     token: config.chatApi.token,
     cookies,
     timeoutMs: config.chatApi.timeoutMs,
-    reconnectDelayMs: config.chatApi.reconnectDelayMs
+    reconnectDelayMs: config.chatApi.reconnectDelayMs,
+    maxReconnectDelayMs: config.chatApi.maxRetryDelayMs,
+    heartbeatIntervalMs: config.chatApi.heartbeatIntervalMs,
+    heartbeatTimeoutMs: config.chatApi.heartbeatTimeoutMs
   }));
 }
 

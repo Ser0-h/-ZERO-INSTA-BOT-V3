@@ -11,13 +11,18 @@ const COMMAND_HOOKS = ['onStart', 'onChat', 'onFirstChat', 'onReply', 'onReactio
 function loadModules(directory, logger, defaults = {}, { event = false, excludedFiles = [] } = {}) {
   const commands = new Map();
   const aliases = new Map();
-  if (!fs.existsSync(directory)) return { commands, aliases };
+  // Resolve once so requiring a command never depends on the current working
+  // directory. A relative `directory` (e.g. "./scripts/cmds") used to be passed
+  // straight to require.resolve, which treated it as a package name and threw
+  // "Cannot find module", breaking startup.
+  const resolvedDirectory = path.resolve(directory);
+  if (!fs.existsSync(resolvedDirectory)) return { commands, aliases };
 
   const excluded = new Set(excludedFiles.map((name) => path.basename(String(name))));
-  for (const file of fs.readdirSync(directory)
+  for (const file of fs.readdirSync(resolvedDirectory)
     .filter((name) => name.endsWith('.js') && !excluded.has(name))
     .sort()) {
-    const filePath = path.join(directory, file);
+    const filePath = path.join(resolvedDirectory, file);
     delete require.cache[require.resolve(filePath)];
     const command = require(filePath);
     if (!command || !command.config?.name || (event

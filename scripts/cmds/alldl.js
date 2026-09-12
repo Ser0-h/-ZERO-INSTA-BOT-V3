@@ -1,5 +1,8 @@
 'use strict';
 
+// Guarantee `global.utils` exists before this module destructures it.
+require('../../src/global-utils');
+
 const { setProgress, getPublicUrl } = global.utils;
 
 const API_URL = 'https://alldl.neokex.xyz/api/alldl';

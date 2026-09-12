@@ -1,5 +1,8 @@
 'use strict';
 
+// Guarantee `global.utils` exists before this module destructures it.
+require('../../src/global-utils');
+
 const fs = require('fs');
 const { replyWithEffect } = global.utils;
 
