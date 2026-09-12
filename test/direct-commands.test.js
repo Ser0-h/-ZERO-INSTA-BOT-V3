@@ -104,9 +104,9 @@ test('alldl uses the API media type when download labels are generic', () => {
 
 test('uptime command reports the reference system fields', () => {
   const report = uptimeCommand.buildReport({ timestamp: Date.now() }, { getHealth: () => ({ connected: true }) });
-  assert.match(report, /SYSTEM UPTIME/);
-  assert.match(report, /RAM Usage:/);
-  assert.match(report, /CPU Load:/);
+  assert.match(report, /System uptime/);
+  assert.match(report, /RAM usage:/);
+  assert.match(report, /CPU load:/);
   assert.match(report, /Node\.js:/);
   assert.match(report, /Status: online/);
 });

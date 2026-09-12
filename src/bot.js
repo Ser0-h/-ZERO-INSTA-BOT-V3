@@ -37,6 +37,7 @@ class InstagramBot {
     this.realtimeConnected = false;
     this.recoveryTimer = null;
     this.recoveryPromise = null;
+    this.sessionGeneration = 0;
     this.eventHandler = null;
     this.globalUtils = ensureGlobalUtils();
   }
@@ -75,6 +76,7 @@ class InstagramBot {
 
   async startSession(loaded, loadedEvents) {
     await this.waitForChatApi();
+    ++this.sessionGeneration;
     try {
       this.api = await this.authenticate();
       this.user = await this.api.getCurrentUserID();
@@ -151,6 +153,10 @@ class InstagramBot {
     this.api.on('disconnected', () => {
       this.realtimeConnected = false;
       this.logger.warn('Instagram realtime disconnected; waiting for the Chat API and re-authenticating automatically.');
+      // A remote session may have been removed while the socket was down.
+      // Clear the client session before recovery so it cannot reconnect forever
+      // with a stale session ID.
+      this.api.resetSession?.();
       this.scheduleSessionRecovery();
     });
     this.api.on('reconnecting', () => this.logger.info('Instagram realtime reconnecting.'));
@@ -180,29 +186,39 @@ class InstagramBot {
     const delayMs = Math.max(1000, this.config.chatApi.reconnectDelayMs * 2);
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = null;
-      this.recoveryPromise = this.recoverSession()
+      const recoveryPromise = this.recoverSession()
         .catch((error) => this.logger.error('Automatic Chat API recovery stopped:', error.message))
-        .finally(() => {
-          this.recoveryPromise = null;
-        });
+      this.recoveryPromise = recoveryPromise;
+      recoveryPromise.finally(() => {
+        if (this.recoveryPromise === recoveryPromise) this.recoveryPromise = null;
+      }).catch(() => {});
     }, delayMs);
   }
 
   async recoverSession() {
+    const generation = this.sessionGeneration;
+    const api = this.api;
+    const eventHandler = this.eventHandler;
+    if (!api || !eventHandler) return this;
     await retryUntilReady({
       operation: async () => {
-        if (this.stopping || this.realtimeConnected) return this;
+        if (this.stopping || this.realtimeConnected || generation !== this.sessionGeneration || api !== this.api) return this;
         await this.waitForChatApi();
         // Re-open the event stream on the existing authenticated server
         // session. Clearing it here would create a second Instagram client
         // during a transient socket loss and needlessly repeat authentication.
-        await this.api.listen(this.eventHandler);
+        await api.listen(eventHandler);
+        if (generation !== this.sessionGeneration || api !== this.api) return this;
         if (!this.realtimeConnected) throw new Error('Chat API realtime connection did not become ready.');
         return this;
       },
       initialDelayMs: this.config.chatApi.retryDelayMs,
       maxDelayMs: this.config.chatApi.maxRetryDelayMs,
-      shouldRetry: (error) => !this.stopping && !this.realtimeConnected && isRetryableStartupError(error),
+      shouldRetry: (error) => generation === this.sessionGeneration
+        && api === this.api
+        && !this.stopping
+        && !this.realtimeConnected
+        && isRetryableStartupError(error),
       onRetry: (error, { attempt, delayMs }) => {
         this.logger.warn(`Automatic Chat API recovery is waiting (${error.message}). Retry ${attempt} in ${delayMs}ms.`);
       },
@@ -211,6 +227,7 @@ class InstagramBot {
   }
 
   async clearSession(unload = false) {
+    this.sessionGeneration += 1;
     clearTimeout(this.recoveryTimer);
     this.recoveryTimer = null;
     this.realtimeConnected = false;
@@ -405,6 +422,7 @@ class InstagramBot {
     if (this.stopPromise) return this.stopPromise;
     this.stopPromise = (async () => {
       this.stopping = true;
+      this.sessionGeneration += 1;
       clearTimeout(this.recoveryTimer);
       this.recoveryTimer = null;
       this.realtimeConnected = false;

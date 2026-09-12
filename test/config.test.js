@@ -53,3 +53,32 @@ test('uses ACCOUNT_FILE only as an optional override', () => {
     else process.env.ACCOUNT_FILE = previous;
   }
 });
+
+test('loads local .env values when process variables are not set', () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'insta-bot-config-'));
+  fs.writeFileSync(path.join(rootDir, 'config.json'), JSON.stringify({
+    chatApi: { url: 'https://config.example.test' }
+  }));
+  fs.writeFileSync(path.join(rootDir, '.env'), [
+    'CHAT_API_URL=https://env.example.test',
+    'CHAT_API_TOKEN=env-token',
+    'CHAT_API_TIMEOUT_MS=7000'
+  ].join('\n'));
+  const previous = {
+    CHAT_API_URL: process.env.CHAT_API_URL,
+    CHAT_API_TOKEN: process.env.CHAT_API_TOKEN,
+    CHAT_API_TIMEOUT_MS: process.env.CHAT_API_TIMEOUT_MS
+  };
+  for (const key of Object.keys(previous)) delete process.env[key];
+  try {
+    const config = loadConfig(rootDir);
+    assert.equal(config.chatApi.url, 'https://env.example.test');
+    assert.equal(config.chatApi.token, 'env-token');
+    assert.equal(config.chatApi.timeoutMs, 7000);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

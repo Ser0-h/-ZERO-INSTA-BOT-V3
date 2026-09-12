@@ -32,6 +32,7 @@ function resolveFromRoot(rootDir, value, fallback) {
 function loadConfig(rootDir = path.resolve(__dirname, '..')) {
   const configPath = path.join(rootDir, 'config.json');
   const commandConfigPath = path.join(rootDir, 'configCommands.json');
+  const env = loadEnvFile(rootDir);
   if (!fs.existsSync(configPath)) {
     throw new Error(`Missing config.json at ${configPath}. Create it before starting the bot.`);
   }
@@ -76,7 +77,7 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     eventCommandUnload: listFromValue(commandSettings.eventCommandUnload),
     dataDir: resolveFromRoot(rootDir, settings.dataDir, 'data'),
     stateFile: resolveFromRoot(rootDir, settings.stateFile, 'data/bot-state.json'),
-    accountFile: resolveAccountFile(rootDir, settings.accountFile),
+    accountFile: resolveAccountFile(rootDir, settings.accountFile, env),
     prefix: stringFromValue(settings.prefix, '!'),
     adminIds: new Set(listFromValue(settings.adminIds)),
     ownerId: stringFromValue(settings.ownerId),
@@ -95,18 +96,18 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     maxUsers: Math.max(1, numberFromValue(settings.maxUsers, 10000)),
     maxThreads: Math.max(1, numberFromValue(settings.maxThreads, 5000)),
     chatApi: {
-      url: stringFromValue(process.env.CHAT_API_URL, stringFromValue(chatApi.url)),
-      token: stringFromValue(process.env.CHAT_API_TOKEN, stringFromValue(chatApi.token)),
-      timeoutMs: Math.max(1000, numberFromValue(process.env.CHAT_API_TIMEOUT_MS ?? chatApi.timeoutMs, 30000)),
-      reconnectDelayMs: Math.max(500, numberFromValue(process.env.CHAT_API_RECONNECT_DELAY_MS ?? chatApi.reconnectDelayMs, 3000)),
-      retryDelayMs: Math.max(1000, numberFromValue(process.env.CHAT_API_RETRY_DELAY_MS ?? chatApi.retryDelayMs, 5000)),
-      maxRetryDelayMs: Math.max(1000, numberFromValue(process.env.CHAT_API_MAX_RETRY_DELAY_MS ?? chatApi.maxRetryDelayMs, 60000))
+      url: stringFromValue(environmentValue('CHAT_API_URL', env), stringFromValue(chatApi.url)),
+      token: stringFromValue(environmentValue('CHAT_API_TOKEN', env), stringFromValue(chatApi.token)),
+      timeoutMs: Math.max(1000, numberFromValue(environmentValue('CHAT_API_TIMEOUT_MS', env) ?? chatApi.timeoutMs, 30000)),
+      reconnectDelayMs: Math.max(500, numberFromValue(environmentValue('CHAT_API_RECONNECT_DELAY_MS', env) ?? chatApi.reconnectDelayMs, 3000)),
+      retryDelayMs: Math.max(1000, numberFromValue(environmentValue('CHAT_API_RETRY_DELAY_MS', env) ?? chatApi.retryDelayMs, 5000)),
+      maxRetryDelayMs: Math.max(1000, numberFromValue(environmentValue('CHAT_API_MAX_RETRY_DELAY_MS', env) ?? chatApi.maxRetryDelayMs, 60000))
     }
   };
 }
 
-function resolveAccountFile(rootDir, configuredValue) {
-  const configured = process.env.ACCOUNT_FILE;
+function resolveAccountFile(rootDir, configuredValue, env = {}) {
+  const configured = environmentValue('ACCOUNT_FILE', env);
   if (configured) return resolveFromRoot(rootDir, configured, 'account.txt');
 
   const localPath = resolveFromRoot(rootDir, configuredValue, 'account.txt');
@@ -115,6 +116,32 @@ function resolveAccountFile(rootDir, configuredValue) {
     return '/etc/secrets/account.txt';
   }
   return localPath;
+}
+
+function environmentValue(key, env) {
+  return process.env[key] !== undefined ? process.env[key] : env[key];
+}
+
+function loadEnvFile(rootDir) {
+  const envPath = path.join(rootDir, '.env');
+  if (!fs.existsSync(envPath)) return {};
+  try {
+    const values = {};
+    for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (!match) continue;
+      let value = match[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      values[match[1]] = value;
+    }
+    return values;
+  } catch (error) {
+    throw new Error(`Could not read .env: ${error.message}`);
+  }
 }
 
 module.exports = { loadConfig, listFromValue };
