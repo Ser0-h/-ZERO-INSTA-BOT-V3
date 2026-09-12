@@ -7,14 +7,16 @@ const statsCommand = require('../scripts/cmds/stats');
 const helpCommand = require('../scripts/cmds/help');
 
 function replyContext(replies) {
+  const effects = [];
   return {
-    api: { sendEffects: async () => { throw new Error('effect endpoint should not be used'); } },
-    message: { reply: async (content) => replies.push(content) },
+    api: { sendEffects: async (...args) => { effects.push(args); return { effect: args[2] }; } },
+    message: { id: 'source-message', reply: async (content) => replies.push(content) },
+    effects,
     threadID: 'thread-1'
   };
 }
 
-test('prefix, stats, and help responses remain replies to the triggering message', async () => {
+test('prefix, stats, and help responses keep effects attached to the triggering message', async () => {
   const replies = [];
   const context = replyContext(replies);
 
@@ -38,10 +40,11 @@ test('prefix, stats, and help responses remain replies to the triggering message
     prefix: '!'
   });
 
-  assert.equal(replies.length, 3);
-  assert.ok(replies[0].includes('🌐') && replies[0].includes('📬'));
-  assert.ok(replies[1].includes('❏') && replies[1].includes('➥'));
-  assert.ok(replies[2].includes('☠️ 𝗡𝗲𝗼𝗞𝗘𝗫 𝗔𝗜') && replies[2].includes('× ping'));
+  assert.equal(replies.length, 0);
+  assert.deepEqual(context.effects.map((call) => call[3]), ['source-message', 'source-message', 'source-message']);
+  assert.ok(context.effects[0][1].includes('🌐') && context.effects[0][1].includes('📬'));
+  assert.ok(context.effects[1][1].includes('❏') && context.effects[1][1].includes('➥'));
+  assert.ok(context.effects[2][1].includes('☠️ 𝗡𝗲𝗼𝗞𝗘𝗫 𝗔𝗜') && context.effects[2][1].includes('× ping'));
 });
 
 test('effect response falls back to a normal reply when effects are unavailable', async () => {

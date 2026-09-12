@@ -9,8 +9,16 @@ function nextResponseEffect() {
   return effect;
 }
 
-async function replyWithEffect({ message }, content) {
-  // The effect endpoint sends a standalone message and cannot preserve the reply target.
+async function replyWithEffect({ api, message, threadID }, content) {
+  const effect = nextResponseEffect();
+  const replyTo = message?.id || null;
+  if (replyTo && typeof api?.sendEffects === 'function') {
+    try {
+      return await api.sendEffects(String(threadID), content, effect, String(replyTo));
+    } catch (_) {
+      // Fall back to a normal threaded reply when the effect endpoint rejects it.
+    }
+  }
   return message.reply(content);
 }
 
