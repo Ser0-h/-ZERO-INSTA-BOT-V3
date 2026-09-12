@@ -7,6 +7,7 @@ const { loadLanguage } = require('./localization');
 const { Store } = require('./store');
 const { loadCommands, loadEventCommands } = require('./command-loader');
 const { CommandRouter, createGlobalFunctions } = require('./command-router');
+const { createGlobalUtils, ensureGlobalUtils } = require('./global-utils');
 const { createHandlerAction } = require('../bot/handler/handlerAction');
 const { createHandlerEvents } = require('../bot/handler/handlerEvents');
 const { retryUntilReady, isRetryableStartupError, sleep } = require('./retry');
@@ -37,6 +38,7 @@ class InstagramBot {
     this.recoveryTimer = null;
     this.recoveryPromise = null;
     this.eventHandler = null;
+    this.globalUtils = ensureGlobalUtils();
   }
 
   async authenticate() {
@@ -224,6 +226,11 @@ class InstagramBot {
     }
     if (global.NkxBot === this.globalRegistry) delete global.NkxBot;
     if (global.InstaBot === this.globalRegistry) delete global.InstaBot;
+    if (global.GoatBot === this.globalRegistry) delete global.GoatBot;
+    if (global.utils === this.globalUtils) {
+      this.globalUtils = createGlobalUtils();
+      global.utils = this.globalUtils;
+    }
     this.api = null;
     this.router = null;
     this.user = null;
@@ -257,6 +264,9 @@ class InstagramBot {
     });
     global.NkxBot = this.globalRegistry;
     global.InstaBot = this.globalRegistry;
+    global.GoatBot = this.globalRegistry;
+    this.globalUtils = createGlobalUtils(this.globalRegistry);
+    global.utils = this.globalUtils;
   }
 
   watchCommandFiles() {
@@ -412,6 +422,7 @@ class InstagramBot {
       await this.store.close();
       if (global.NkxBot === this.globalRegistry) delete global.NkxBot;
       if (global.InstaBot === this.globalRegistry) delete global.InstaBot;
+      if (global.GoatBot === this.globalRegistry) delete global.GoatBot;
       this.started = false;
     })();
     return this.stopPromise.finally(() => {

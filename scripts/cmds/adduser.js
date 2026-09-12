@@ -1,6 +1,6 @@
 'use strict';
 
-const { resolveUserIDs } = require('../utils/thread-users');
+const { resolveUserIDs } = global.utils;
 
 module.exports = {
   config: {

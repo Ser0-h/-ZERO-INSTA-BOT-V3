@@ -1,6 +1,6 @@
 'use strict';
 
-const { stringifyThreadInfo } = require('../../func/utils');
+const { stringifyThreadInfo } = global.utils;
 
 module.exports = {
   config: {

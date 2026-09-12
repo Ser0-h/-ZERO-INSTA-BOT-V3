@@ -1,7 +1,6 @@
 'use strict';
 
-const { formatDuration } = require('../../func/utils');
-const { replyWithEffect } = require('../../func/reply');
+const { formatDuration, replyWithEffect } = global.utils;
 
 module.exports = {
   config: {

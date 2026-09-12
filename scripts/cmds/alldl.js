@@ -1,7 +1,6 @@
 'use strict';
 
-const { setProgress } = require('../../func/progress');
-const { getPublicUrl } = require('../../func/media');
+const { setProgress, getPublicUrl } = global.utils;
 
 const API_URL = 'https://alldl.neokex.xyz/api/alldl';
 

@@ -1,7 +1,7 @@
 'use strict';
 
 const axios = require('axios');
-const { setProgress } = require('../../func/progress');
+const { setProgress } = global.utils;
 
 const API_BASE = 'https://alldl.neokex.xyz/api';
 

@@ -1,8 +1,7 @@
 'use strict';
 
 const axios = require('axios');
-const { setProgress } = require('../../func/progress');
-const { extractImageUrl, findReplyTarget } = require('../utils/reply');
+const { setProgress, extractImageUrl, findReplyTarget } = global.utils;
 
 const API_URL = 'https://flux-context.onrender.com';
 const DEFAULT_QUALITY = 'low';

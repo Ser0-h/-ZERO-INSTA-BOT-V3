@@ -1,6 +1,6 @@
 'use strict';
 
-const { extractImageUrl, findReplyTarget } = require('../utils/reply');
+const { extractImageUrl, findReplyTarget } = global.utils;
 
 module.exports = {
   config: {

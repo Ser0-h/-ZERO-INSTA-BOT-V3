@@ -1,6 +1,6 @@
 'use strict';
 
-const { toNumber } = require('../../func/utils');
+const { toNumber } = global.utils;
 
 module.exports = {
   config: {

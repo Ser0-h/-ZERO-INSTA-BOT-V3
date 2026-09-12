@@ -5,7 +5,7 @@ const {
   getMessageSenderID,
   getUserID,
   getUsername
-} = require('../utils/reply');
+} = global.utils;
 
 module.exports = {
   config: {

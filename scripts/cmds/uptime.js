@@ -1,7 +1,7 @@
 'use strict';
 
 const os = require('os');
-const { formatDuration } = require('../../func/utils');
+const { formatDuration } = global.utils;
 
 module.exports = {
   config: {

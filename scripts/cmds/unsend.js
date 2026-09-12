@@ -1,6 +1,6 @@
 'use strict';
 
-const { getMessageID } = require('../utils/reply');
+const { getMessageID } = global.utils;
 
 module.exports = {
   config: {

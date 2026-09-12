@@ -1,6 +1,6 @@
 'use strict';
 
-const { setProgress } = require('../../func/progress');
+const { setProgress } = global.utils;
 
 module.exports = {
   config: {

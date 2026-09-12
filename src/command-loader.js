@@ -2,6 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const { ensureGlobalUtils } = require('./global-utils');
+
+ensureGlobalUtils();
 
 const COMMAND_HOOKS = ['onStart', 'onChat', 'onFirstChat', 'onReply', 'onReaction', 'onEvent', 'onAnyEvent'];
 

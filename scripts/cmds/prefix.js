@@ -1,7 +1,7 @@
 'use strict';
 
 const fs = require('fs');
-const { replyWithEffect } = require('../../func/reply');
+const { replyWithEffect } = global.utils;
 
 module.exports = {
   config: {

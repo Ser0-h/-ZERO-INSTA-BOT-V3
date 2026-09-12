@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+global.utils = require('../src/global-utils').ensureGlobalUtils();
 const effectCommand = require('../scripts/cmds/effect');
 const musicCommand = require('../scripts/cmds/stickermusic');
 const singCommand = require('../scripts/cmds/sing');
