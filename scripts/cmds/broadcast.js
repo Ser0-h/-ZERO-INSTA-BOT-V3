@@ -15,9 +15,9 @@ module.exports = {
   async onStart({ api, args, message }) {
     const targetThreadID = args.shift();
     const body = args.join(' ').trim();
-    if (!targetThreadID || !body) return message.reply('❑ Usage: broadcast <threadID> <message>');
-    if (body.length > 2000) return message.reply('❑ Broadcasts are limited to 2000 characters.');
+    if (!targetThreadID || !body) return message.reply('Usage: broadcast <threadID> <message>');
+    if (body.length > 2000) return message.reply('Broadcasts are limited to 2000 characters.');
     await api.sendMessage(body, targetThreadID);
-    return message.reply(`❑ Message sent to ${targetThreadID}.`);
+    return message.reply(`Message sent to ${targetThreadID}.`);
   }
 };

@@ -13,7 +13,7 @@ module.exports = {
 
   async onStart({ api, args, message, threadID }) {
     const query = args.join(' ').trim();
-    if (!query) return message.reply('❏ Please provide a song name.');
+    if (!query) return message.reply('Please provide a song name.');
 
     try {
       const result = await api.stickerMusic(threadID, query);

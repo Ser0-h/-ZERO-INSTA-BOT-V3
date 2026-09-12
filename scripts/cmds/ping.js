@@ -13,6 +13,6 @@ module.exports = {
   async onStart({ message, functions }) {
     const health = functions.getHealth?.() || {};
     const state = health.mqtt?.connected || health.listening ? 'online' : 'starting';
-    return message.reply(`❑ Pong! The bot is ${state}.`);
+    return message.reply(`Pong. The bot is ${state}.`);
   }
 };

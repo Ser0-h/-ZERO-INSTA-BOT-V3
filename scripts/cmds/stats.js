@@ -16,12 +16,13 @@ module.exports = {
   async onStart({ api, config, message, store, threadID }) {
     const stats = store.stats();
     return replyWithEffect({ api, message, threadID }, [
-      `❏ ${config.botName || 'Bot'} statistics`,
-      `➥ Uptime: ${formatDuration(stats.uptimeMs)}`,
-      `➥ Messages seen: ${stats.messages}`,
-      `➥ Commands run: ${stats.commands}`,
-      `➥ Users: ${stats.users}`,
-      `➥ Threads: ${stats.threads}`
+      `${config.botName || 'Bot'} statistics`,
+      '',
+      `Uptime: ${formatDuration(stats.uptimeMs)}`,
+      `Messages seen: ${stats.messages}`,
+      `Commands run: ${stats.commands}`,
+      `Users: ${stats.users}`,
+      `Threads: ${stats.threads}`
     ].join('\n'));
   }
 };

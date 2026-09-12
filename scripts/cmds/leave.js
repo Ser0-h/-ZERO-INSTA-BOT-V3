@@ -15,11 +15,11 @@ module.exports = {
   async onStart({ args, message, store, threadID }) {
     const setting = parseSetting(args[0]);
     if (setting === null) {
-      return message.reply(`❑ Leave messages: ${store.getLeave(threadID) ? 'on' : 'off'}`);
+      return message.reply(`Leave messages: ${store.getLeave(threadID) ? 'on' : 'off'}`);
     }
-    if (setting === undefined) return message.reply('❑ Usage: leave on|off');
+    if (setting === undefined) return message.reply('Usage: leave on|off');
     store.setLeave(threadID, setting);
-    return message.reply(`❑ Leave messages turned ${setting ? 'on' : 'off'} for this group.`);
+    return message.reply(`Leave messages turned ${setting ? 'on' : 'off'} for this group.`);
   }
 };
 

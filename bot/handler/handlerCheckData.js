@@ -101,6 +101,11 @@ function normalizeEvent(error, event) {
   normalized.removedParticipant = normalized.removedParticipant || normalized.removed_participant || normalized.removed_user || null;
   normalized.participants = normalized.participants || normalized.thread_participants || null;
   normalized.users = normalized.users || normalized.thread_users || null;
+  normalized.mentions = normalized.mentions
+    || normalized.mentioned_users
+    || normalized.mentionedUsers
+    || normalized.mentions_map
+    || {};
   normalized.user = normalized.user || normalized.participant || null;
   normalized.reader = normalized.reader || normalized.reader_id || null;
   normalized.from = normalized.from || normalized.senderID || normalized.sender_id || null;

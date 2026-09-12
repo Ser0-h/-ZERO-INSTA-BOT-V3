@@ -1,5 +1,19 @@
 'use strict';
 
+const ROLES = Object.freeze({
+  USER: 0,
+  GROUP_ADMIN: 1,
+  BOT_ADMIN: 2,
+  OWNER: 3
+});
+
+const ROLE_NAMES = Object.freeze({
+  [ROLES.USER]: 'user',
+  [ROLES.GROUP_ADMIN]: 'group admin',
+  [ROLES.BOT_ADMIN]: 'bot admin',
+  [ROLES.OWNER]: 'owner'
+});
+
 function createGlobalFunctions({ api, config, store, logger, language, getCommands, getCommandEntries, getEventCommands, reloadCommands }) {
   return {
     api,
@@ -24,10 +38,13 @@ function createGlobalFunctions({ api, config, store, logger, language, getComman
     getThreadInfo: (threadID) => api.getThreadInfo(String(threadID)),
     getThreadHistory: (threadID, amount) => api.getThreadHistory(String(threadID), amount),
     addUsersToThread: (threadID, userIDs) => api.addUsersToThread(String(threadID), userIDs),
+    addUserToGroup: (threadID, userID) => api.addUserToGroup(String(threadID), userID),
     removeUsersFromThread: (threadID, userIDs) => api.removeUsersFromThread(String(threadID), userIDs),
     leaveThread: (threadID) => api.leaveThread(String(threadID)),
     getUserInfo: (userID) => api.getUserInfo(String(userID)),
+    getProfilePicture: (userID) => api.getProfilePicture(String(userID)),
     getUserInfoByUsername: (username) => api.getUserInfoByUsername(username),
+    getProfilePictureByUsername: (username) => api.getProfilePictureByUsername(username),
     searchUsers: (query, options) => api.searchUsers(query, options),
     searchThreads: (query, options) => api.searchThreads(query, options),
     getHealth: () => api.getHealth(),
@@ -51,10 +68,13 @@ function createContextFunctions({ api, config, store, router, logger, language, 
     getThreadInfo: (targetThreadID = threadID) => api.getThreadInfo(String(targetThreadID)),
     getThreadHistory: (targetThreadID = threadID, amount) => api.getThreadHistory(String(targetThreadID), amount),
     addUsersToThread: (userIDs, targetThreadID = threadID) => api.addUsersToThread(String(targetThreadID), userIDs),
+    addUserToGroup: (userID, targetThreadID = threadID) => api.addUserToGroup(String(targetThreadID), userID),
     removeUsersFromThread: (userIDs, targetThreadID = threadID) => api.removeUsersFromThread(String(targetThreadID), userIDs),
     leaveThread: (targetThreadID = threadID) => api.leaveThread(String(targetThreadID)),
     getUserInfo: (userID = event.senderID) => api.getUserInfo(String(userID)),
+    getProfilePicture: (userID = event.senderID) => api.getProfilePicture(String(userID)),
     getUserInfoByUsername: (username) => api.getUserInfoByUsername(username),
+    getProfilePictureByUsername: (username) => api.getProfilePictureByUsername(username),
     searchUsers: (query, options) => api.searchUsers(query, options),
     searchThreads: (query, options) => api.searchThreads(query, options),
     sendTypingIndicator: () => api.sendTypingIndicator(threadID),
@@ -109,10 +129,13 @@ function messageIDMatches(message, targetID) {
   ].some((value) => value !== null && value !== undefined && String(value) === target);
 }
 
-function isTextMessage(message) {
+function isBotMessage(message) {
   if (!message) return false;
-  const itemType = String(message.itemType || message.item_type || '').toLowerCase();
-  return itemType === 'text';
+  return Boolean(message.senderID || message.senderId || message.sender_id)
+    && (message.type === 'message'
+      || message.itemType
+      || message.item_type
+      || message.body !== undefined);
 }
 
 class CommandRouter {
@@ -161,20 +184,18 @@ class CommandRouter {
 
   getRole(senderID, event = {}) {
     const id = String(senderID || '');
-    if (id && id === this.config.ownerId) return 2;
-    if (id && this.config.adminIds.has(id)) return 2;
+    if (id && id === String(this.config.ownerId || '')) return ROLES.OWNER;
+    if (id && this.config.adminIds?.has(id)) return ROLES.BOT_ADMIN;
     if (this.config.allowThreadAdmins && event.isGroup) {
-      const admins = event.threadAdminIDs || event.adminIDs || event.threadAdmins || [];
-      if (Array.isArray(admins) && admins.map(String).includes(id)) return 1;
+      const admins = event.threadAdminIDs || event.adminIDs || event.threadAdmins || event.admins || [];
+      if (Array.isArray(admins) && admins.some((admin) => asID(admin) === id)) return ROLES.GROUP_ADMIN;
     }
-    return 0;
+    return ROLES.USER;
   }
 
   getRoleName(role, senderID = '') {
-    if (Number(role) >= 2) {
-      return String(senderID || '') === String(this.config.ownerId || '') ? 'owner' : 'admin';
-    }
-    return Number(role) === 1 ? 'admin' : 'user';
+    if (String(senderID || '') === String(this.config.ownerId || '') && senderID) return ROLE_NAMES[ROLES.OWNER];
+    return ROLE_NAMES[Number(role)] || ROLE_NAMES[ROLES.USER];
   }
 
   getRequiredRole(command, hook = 'onStart') {
@@ -266,7 +287,7 @@ class CommandRouter {
 
     const requestedName = tokens.shift()?.toLowerCase();
     if (!requestedName) {
-      await this.safeSend(event, `➥ Use ${prefix}help to see the available commands.`);
+      await this.safeSend(event, `Use ${prefix}help to see the available commands.`);
       return true;
     }
 
@@ -274,9 +295,9 @@ class CommandRouter {
     if (!command) {
       const suggestion = this.suggestCommand(requestedName);
       await this.safeSend(event, [
-        `❏ I do not recognize ${prefix}${requestedName}.`,
-        suggestion ? `➥ Did you mean: ${prefix}${suggestion}?` : '',
-        `➥ Use ${prefix}help to see available commands.`
+        `I do not recognize ${prefix}${requestedName}.`,
+        suggestion ? `Did you mean ${prefix}${suggestion}?` : '',
+        `Use ${prefix}help to see available commands.`
       ].filter(Boolean).join('\n'));
       return true;
     }
@@ -296,7 +317,7 @@ class CommandRouter {
     if (this.isCoolingDown(cooldownKey, cooldown)) {
       await this.safeSend(event, this.language(
         'system.cooldown',
-        '❏ Please wait a moment before using that command again.'
+        'Please wait a moment before using that command again.'
       ));
       return true;
     }
@@ -338,18 +359,21 @@ class CommandRouter {
 
   getPermissionError(command, event, hook, role = this.getRole(event.senderID, event)) {
     if (this.store.isMuted(event.threadID) && role < 2 && !command.config.allowWhenMuted) {
-      return this.language('permissions.muted', '❏ The bot is muted in this chat.');
+      return this.language('permissions.muted', 'The bot is muted in this chat.');
     }
     const requiredRole = this.getRequiredRole(command, hook);
     if (role >= requiredRole) return null;
     this.logger.debug(`Permission denied for ${command.config.name} (${hook}) to ${event.senderID || 'unknown'}`);
-    if (requiredRole >= 2) {
-      return this.language('permissions.owner', '❏ Only bot administrators can use this command.');
+    if (requiredRole >= ROLES.OWNER) {
+      return this.language('permissions.owner', 'Only the bot owner can use this command.');
+    }
+    if (requiredRole >= ROLES.BOT_ADMIN) {
+      return this.language('permissions.botAdmin', 'Only bot administrators can use this command.');
     }
     if (requiredRole === 1) {
-      return this.language('permissions.groupAdmin', '❏ Only group administrators can use this command.');
+      return this.language('permissions.groupAdmin', 'Only group administrators can use this command.');
     }
-    return '❏ You do not have permission to use this command.';
+    return 'You do not have permission to use this command.';
   }
 
   async invoke(command, hook, event, args, options = {}) {
@@ -368,7 +392,7 @@ class CommandRouter {
       await command[hook](context);
     } catch (error) {
       this.logger.error(`Command ${command.config.name} ${hook} failed:`, error);
-      if (options.errorReply) await this.safeReply(context, '❏ I could not complete that command. Please try again.');
+      if (options.errorReply) await this.safeReply(context, 'I could not complete that command. Please try again.');
     }
     return true;
   }
@@ -392,7 +416,7 @@ class CommandRouter {
     if (!/^(hi|hello|hey|ping)\b/i.test(body)) return false;
     const key = `${event.threadID}:greeting:${event.senderID || 'unknown'}`;
     if (this.isCoolingDown(key, 60 * 1000)) return false;
-    await this.safeSend(event, `❏ ${this.config.botName}: Hello! Use ${this.store.getPrefix(event.threadID, this.config.prefix)}help to see what I can do.`);
+    await this.safeSend(event, `${this.config.botName}: Hello. Use ${this.store.getPrefix(event.threadID, this.config.prefix)}help to see what I can do.`);
     return true;
   }
 
@@ -408,7 +432,7 @@ class CommandRouter {
       else await this.invoke(command, 'onReply', event, tokenize(body), { reply: registered, record: true });
     } catch (error) {
       this.logger.error(`Reply handler ${command.config.name} failed:`, error);
-      await this.safeReply(context, '❏ I could not process that reply. Please try again.');
+      await this.safeReply(context, 'I could not process that reply. Please try again.');
     }
     return true;
   }
@@ -441,13 +465,13 @@ class CommandRouter {
     const reaction = String(reactionValue || '').replace(/\uFE0F/g, '');
     const status = event.reactionStatus || event.reaction_status;
     if (!['😠', '😡'].includes(reaction) || (status && status !== 'created')) return false;
-    if (this.getRole(event.senderID, event) < 2) return false;
+    if (this.getRole(event.senderID, event) < 1) return false;
 
     const targetID = event.targetMessageID || event.messageID;
     if (!targetID || typeof this.api.unsendMessage !== 'function') return false;
 
     const message = await this.findMessage(event.threadID, targetID);
-    if (!message || !isTextMessage(message)) return false;
+    if (!message || !isBotMessage(message)) return false;
 
     let currentUser;
     try {
@@ -630,4 +654,4 @@ function levenshtein(left, right) {
   return previous[right.length];
 }
 
-module.exports = { CommandRouter, tokenize, createGlobalFunctions, createContextFunctions };
+module.exports = { CommandRouter, tokenize, createGlobalFunctions, createContextFunctions, ROLES, ROLE_NAMES };

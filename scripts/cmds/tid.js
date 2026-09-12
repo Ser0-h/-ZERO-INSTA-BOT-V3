@@ -11,6 +11,6 @@ module.exports = {
   },
 
   async onStart({ message, threadID }) {
-    return message.reply(`❑ Thread ID: ${threadID}`);
+    return message.reply(`Thread ID: ${threadID}`);
   }
 };

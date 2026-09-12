@@ -15,9 +15,9 @@ module.exports = {
   async onStart({ api, message, threadID }) {
     try {
       const info = await api.getThreadInfo(threadID);
-      return message.reply(`${stringifyThreadInfo(info)}\n➥ Thread ID: ${threadID}`);
+      return message.reply(`${stringifyThreadInfo(info)}\nThread ID: ${threadID}`);
     } catch (error) {
-      return message.reply(`❑ Could not fetch thread information: ${error.message}`);
+      return message.reply(`Could not fetch thread information: ${error.message}`);
     }
   }
 };

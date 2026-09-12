@@ -37,7 +37,10 @@ function loadModules(directory, logger, defaults = {}, { event = false, excluded
     };
     if (!Array.isArray(config.aliases)) throw new Error(`Invalid aliases for command: ${file}`);
     config.aliases = [...new Set(config.aliases.map((alias) => String(alias).toLowerCase()).filter(Boolean))];
-    if (typeof config.role !== 'number' && (!config.role || typeof config.role !== 'object')) {
+    const roleValues = config.role && typeof config.role === 'object' && !Array.isArray(config.role)
+      ? Object.values(config.role)
+      : [config.role];
+    if (roleValues.some((role) => !Number.isInteger(role) || role < 0 || role > 3)) {
       throw new Error(`Invalid role for command: ${file}`);
     }
     command.config = config;

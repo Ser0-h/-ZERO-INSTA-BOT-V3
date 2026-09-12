@@ -22,19 +22,19 @@ module.exports = {
     if (username) {
       try {
         const user = await api.getUserInfoByUsername(username);
-        return message.reply(`❑ User ID of ${user.username || `@${username}`}: ${getUserID(user)}`);
+        return message.reply(`User ID of ${user.username || `@${username}`}: ${getUserID(user)}`);
       } catch (error) {
-        return message.reply(`❑ Could not find @${username}: ${error.message}`);
+        return message.reply(`Could not find @${username}: ${error.message}`);
       }
     }
 
     if (event.replyTo) {
       const target = await resolveReplyUser(api, event, threadID);
-      if (!target.userID) return message.reply('❑ Could not resolve the user who sent that message.');
-      return message.reply(`❑ User ID of ${target.username || 'this user'}: ${target.userID}`);
+      if (!target.userID) return message.reply('Could not resolve the user who sent that message.');
+      return message.reply(`User ID of ${target.username || 'this user'}: ${target.userID}`);
     }
 
-    return message.reply(`❑ Your ID: ${senderID || 'unknown'}`);
+    return message.reply(`Your ID: ${senderID || 'unknown'}`);
   }
 };
 

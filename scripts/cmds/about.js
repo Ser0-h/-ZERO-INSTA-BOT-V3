@@ -12,11 +12,12 @@ module.exports = {
 
   async onStart({ config, message }) {
     return message.reply([
-      `❑ ${config.botName}`,
-      `❑ ${config.description}`,
-      `❑ Prefix: ${config.prefix}`,
-      `❑ Website: ${config.website}`,
-      `❑ Author: ${config.author}`
+      config.botName,
+      config.description,
+      '',
+      `Prefix: ${config.prefix}`,
+      `Website: ${config.website}`,
+      `Author: ${config.author}`
     ].join('\n'));
   }
 };

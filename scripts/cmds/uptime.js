@@ -25,7 +25,7 @@ module.exports = {
       return result;
     } catch (error) {
       await message.react?.('❌');
-      return message.reply(`❌ Uptime check failed: ${error.message}`);
+      return message.reply(`Uptime check failed: ${error.message}`);
     }
   }
 };
@@ -44,16 +44,16 @@ function buildReport(event = {}, functions = {}) {
   const connected = health.mqtt?.connected ?? health.connected ?? health.listening;
 
   return [
-    '📡 SYSTEM UPTIME',
+    'System uptime',
     '',
-    `❏ Uptime: ${formatDuration(uptime)}`,
-    `❏ Ping: ${ping} ms`,
-    `❏ RAM Usage: ${formatBytes(usedMemory)} / ${formatBytes(totalMemory)}`,
-    `❏ CPU Load: ${cpu.toFixed(2)}%`,
-    `❏ Platform: ${os.platform()} (${os.arch()})`,
-    `❏ Node.js: ${process.version}`,
-    `❏ Hostname: ${os.hostname()}`,
-    `❏ Status: ${connected === undefined ? 'unknown' : connected ? 'online' : 'offline'}`
+    `Uptime: ${formatDuration(uptime)}`,
+    `Ping: ${ping} ms`,
+    `RAM usage: ${formatBytes(usedMemory)} / ${formatBytes(totalMemory)}`,
+    `CPU load: ${cpu.toFixed(2)}%`,
+    `Platform: ${os.platform()} (${os.arch()})`,
+    `Node.js: ${process.version}`,
+    `Hostname: ${os.hostname()}`,
+    `Status: ${connected === undefined ? 'unknown' : connected ? 'online' : 'offline'}`
   ].join('\n');
 }
 

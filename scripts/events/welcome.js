@@ -23,9 +23,9 @@ module.exports = {
     if (!names.length) return;
 
     if (action === 'join') {
-      return message.send(`❑ Welcome to the group, ${names.join(', ')}!`);
+      return message.send(`Welcome to the group, ${names.join(', ')}.`);
     }
-    return message.send(`❑ ${names.join(', ')} left the group.`);
+    return message.send(`${names.join(', ')} left the group.`);
   }
 };
 

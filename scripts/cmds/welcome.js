@@ -15,11 +15,11 @@ module.exports = {
   async onStart({ args, message, store, threadID }) {
     const setting = parseSetting(args[0]);
     if (setting === null) {
-      return message.reply(`❑ Welcome messages: ${store.getWelcome(threadID) ? 'on' : 'off'}`);
+      return message.reply(`Welcome messages: ${store.getWelcome(threadID) ? 'on' : 'off'}`);
     }
-    if (setting === undefined) return message.reply('❑ Usage: welcome on|off');
+    if (setting === undefined) return message.reply('Usage: welcome on|off');
     store.setWelcome(threadID, setting);
-    return message.reply(`❑ Welcome messages turned ${setting ? 'on' : 'off'} for this group.`);
+    return message.reply(`Welcome messages turned ${setting ? 'on' : 'off'} for this group.`);
   }
 };
 

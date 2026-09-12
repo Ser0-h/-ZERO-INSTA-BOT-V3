@@ -77,6 +77,15 @@ test('loader can persistently exclude unloaded command files', () => {
   assert.equal(loaded.commands.has('hidden'), false);
 });
 
+test('loader accepts roles from user through owner and rejects invalid values', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'insta-command-roles-'));
+  fs.writeFileSync(path.join(root, 'valid.js'), `module.exports = { config: { name: 'valid', role: 3 }, onStart() {} };`);
+  assert.equal(loadCommands(root, logger).commands.get('valid').config.role, 3);
+
+  fs.writeFileSync(path.join(root, 'invalid.js'), `module.exports = { config: { name: 'invalid', role: 4 }, onStart() {} };`);
+  assert.throws(() => loadCommands(root, logger), /Invalid role/);
+});
+
 test('router dispatches commands with context-bound global functions and roles', async () => {
   const sent = [];
   const api = {
@@ -89,7 +98,7 @@ test('router dispatches commands with context-bound global functions and roles',
     ['whoami', {
       config: { name: 'whoami', aliases: [], role: { onStart: 1 }, cooldown: 0, allowWhenMuted: false },
       async onStart(context) {
-        assert.equal(context.roleName, 'admin');
+        assert.equal(context.roleName, 'bot admin');
         assert.equal(typeof context.functions.getHealth, 'function');
         await context.message.reply(`role=${context.roleName}`);
       }
@@ -104,15 +113,28 @@ test('router dispatches commands with context-bound global functions and roles',
     logger
   });
 
+  await router.handle({ type: 'message', threadID: 'thread', senderID: 'owner', body: '!whoami' });
   await router.handle({ type: 'message', threadID: 'thread', senderID: 'admin', body: '!whoami' });
-  assert.deepEqual(sent, [{ content: 'role=admin', threadID: 'thread' }]);
+  await router.handle({
+    type: 'message',
+    threadID: 'thread',
+    senderID: 'group-admin',
+    isGroup: true,
+    threadAdminIDs: ['group-admin'],
+    body: '!whoami'
+  });
+  assert.deepEqual(sent, [
+    { content: 'role=owner', threadID: 'thread' },
+    { content: 'role=bot admin', threadID: 'thread' },
+    { content: 'role=group admin', threadID: 'thread' }
+  ]);
 
   await router.handle({ type: 'message', threadID: 'thread', senderID: 'user', body: '!whoami' });
-  assert.equal(sent.length, 2);
-  assert.equal(sent[1].content, '❏ Only group administrators can use this command.');
+  assert.equal(sent.length, 4);
+  assert.equal(sent[3].content, 'Only group administrators can use this command.');
 });
 
-test('owner eval supports the out helper and shell commands are admin-only', async () => {
+test('owner eval supports the out helper and shell commands are owner-only', async () => {
   const sent = [];
   const router = new CommandRouter({
     api: { sendMessage: async (content) => sent.push(content) },
@@ -126,11 +148,11 @@ test('owner eval supports the out helper and shell commands are admin-only', asy
     logger
   });
 
-  await router.handle({ type: 'message', threadID: 'thread', senderID: 'admin', body: '!eval out("hi")' });
+  await router.handle({ type: 'message', threadID: 'thread', senderID: 'owner', body: '!eval out("hi")' });
   await router.handle({ type: 'message', threadID: 'thread', senderID: 'user', body: '!eval 3 + 4' });
 
-  assert.deepEqual(sent, ['hi', '❏ Only bot administrators can use this command.']);
-  assert.equal(shellCommand.config.role, 2);
+  assert.deepEqual(sent, ['hi', 'Only the bot owner can use this command.']);
+  assert.equal(shellCommand.config.role, 3);
 });
 
 test('router supports command onChat and onReply hooks', async () => {
@@ -349,7 +371,7 @@ test('admin anger reactions silently unsend cached bot text', async () => {
   assert.deepEqual(removed, [['bot-message', 'thread']]);
 });
 
-test('anger reactions do not unsend non-admin or non-text messages', async () => {
+test('anger reactions do not unsend non-admin messages', async () => {
   const removed = [];
   const router = new CommandRouter({
     api: {
@@ -377,6 +399,36 @@ test('anger reactions do not unsend non-admin or non-text messages', async () =>
   });
 
   assert.deepEqual(removed, []);
+});
+
+test('admin anger reactions unsend cached bot media', async () => {
+  const removed = [];
+  const router = new CommandRouter({
+    api: {
+      getCurrentUserID: () => 'bot',
+      unsendMessage: async (...args) => removed.push(args)
+    },
+    config: makeConfig(),
+    store: {
+      ...makeStore(),
+      getHistory: () => [{ messageID: 'bot-media', senderID: 'bot', itemType: 'media' }]
+    },
+    commands: new Map(),
+    aliases: new Map(),
+    logger
+  });
+
+  await router.handle({
+    type: 'message_reaction',
+    threadID: 'thread',
+    senderID: 'admin',
+    messageID: 'bot-media',
+    targetMessageID: 'bot-media',
+    reaction: '😡',
+    reactionStatus: 'created'
+  });
+
+  assert.deepEqual(removed, [['bot-media', 'thread']]);
 });
 
 test('explicit commands take priority over temporary reply handlers', async () => {
@@ -435,7 +487,7 @@ test('id and tid return focused identifiers', async () => {
   const message = { reply: async (content) => replies.push(content) };
   await idCommand.onStart({ api: {}, args: [], event: {}, message, senderID: 'user-1', threadID: 'thread-1' });
   await tidCommand.onStart({ message, threadID: 'thread-1' });
-  assert.deepEqual(replies, ['❑ Your ID: user-1', '❑ Thread ID: thread-1']);
+  assert.deepEqual(replies, ['Your ID: user-1', 'Thread ID: thread-1']);
 });
 
 test('id resolves a mentioned user and a replied message owner', async () => {
@@ -459,8 +511,8 @@ test('id resolves a mentioned user and a replied message owner', async () => {
     threadID: 'thread-1'
   });
   assert.deepEqual(replies, [
-    '❑ User ID of __neo.nnn: 42',
-    '❑ User ID of __neo.nnn: 42'
+    'User ID of __neo.nnn: 42',
+    'User ID of __neo.nnn: 42'
   ]);
 });
 
@@ -478,7 +530,7 @@ test('id resolves a reply target from nested sender data and history fallback', 
     threadID: 'thread-1'
   });
 
-  assert.deepEqual(replies, ['❑ User ID of alice: 42']);
+  assert.deepEqual(replies, ['User ID of alice: 42']);
 });
 
 test('reply target resolver returns image attachments for image editing', async () => {
@@ -525,8 +577,8 @@ test('welcome event announces joins and departures', async () => {
     event: { isGroup: true, updateType: 'remove_users', removedParticipants: [{ username: 'old_user' }] }
   });
   assert.deepEqual(replies, [
-    '❑ Welcome to the group, new_user!',
-    '❑ old_user left the group.'
+    'Welcome to the group, new_user.',
+    'old_user left the group.'
   ]);
 });
 
@@ -546,8 +598,8 @@ test('welcome and leave commands toggle their thread settings', async () => {
   assert.equal(settings.welcome, true);
   assert.equal(settings.leave, false);
   assert.deepEqual(replies, [
-    '❑ Welcome messages turned on for this group.',
-    '❑ Leave messages turned off for this group.'
+    'Welcome messages turned on for this group.',
+    'Leave messages turned off for this group.'
   ]);
 });
 
@@ -568,8 +620,8 @@ test('participant commands resolve usernames and forward user IDs', async () => 
   assert.deepEqual(added, [['thread', ['42', '84']]]);
   assert.deepEqual(removed, [['thread', ['42']]]);
   assert.deepEqual(replies, [
-    '❑ Added 2 users to the group.',
-    '❑ Removed 1 user from the group.'
+    'Added 2 users to the group.',
+    'Removed 1 user from the group.'
   ]);
 });
 
@@ -583,7 +635,7 @@ test('language resources provide friendly fallback messages', () => {
   const getLang = loadLanguage(path.join(__dirname, '../scripts/langs'), 'en', logger);
   assert.equal(
     getLang('system.ready', 'fallback', { prefix: '!' }),
-    '❏ Ready. Use !help to see what I can do.'
+    'Ready. Use !help to see what I can do.'
   );
   assert.equal(getLang('missing.key', 'fallback'), 'fallback');
 });
@@ -635,7 +687,7 @@ test('normalizes sanitized Instagram XMAT membership events', async () => {
     event: result.event,
     message: { send: async (content) => replies.push(content) }
   });
-  assert.deepEqual(replies, ['❑ Welcome to the group, mahin_abid_777!']);
+  assert.deepEqual(replies, ['Welcome to the group, mahin_abid_777.']);
 });
 
 test('does not run any-event hooks for blocked threads', async () => {

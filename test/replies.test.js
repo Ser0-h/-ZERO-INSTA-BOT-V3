@@ -43,8 +43,9 @@ test('prefix, stats, and help responses use standalone chat effects', async () =
   assert.equal(replies.length, 0);
   assert.deepEqual(context.effects.map((call) => call.length), [3, 3, 3]);
   assert.ok(context.effects[0][1].includes('🌐') && context.effects[0][1].includes('📬'));
-  assert.ok(context.effects[1][1].includes('❏') && context.effects[1][1].includes('➥'));
-  assert.ok(context.effects[2][1].includes('☠️ 𝗡𝗲𝗼𝗞𝗘𝗫 𝗔𝗜') && context.effects[2][1].includes('× ping'));
+  assert.match(context.effects[1][1], /^Test Bot statistics\n\nUptime:/);
+  assert.match(context.effects[2][1], /^Available commands\n/);
+  assert.match(context.effects[2][1], /- ping/);
 });
 
 test('effect response falls back to a normal reply when effects are unavailable', async () => {

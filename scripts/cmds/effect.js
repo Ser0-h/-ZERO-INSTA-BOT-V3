@@ -17,7 +17,7 @@ module.exports = {
     const requestedEffect = args.shift() || 'fire';
     const effectName = requestedEffect.toLowerCase();
     if (!EFFECT_NAMES.has(effectName)) {
-      return message.reply(`❏ Unknown effect. Available effects: ${availableEffects}.`);
+      return message.reply(`Unknown effect. Available effects: ${availableEffects}.`);
     }
 
     const text = args.join(' ').trim() || `Effect test: ${effectName}`;

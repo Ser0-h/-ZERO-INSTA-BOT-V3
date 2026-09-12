@@ -49,12 +49,12 @@ module.exports = {
       });
       const taskID = getTaskID(submitted);
       if (!taskID) throw new Error(getAPIMessage(submitted) || 'The image service did not return a task ID.');
-      await message.reply(`${imageUrl ? '❑ Editing' : '❑ Generating'} your image...\n➥ TaskID: ${taskID}`);
+      await message.reply(`${imageUrl ? 'Editing' : 'Generating'} your image...\nTask ID: ${taskID}`);
 
       const result = await pollTask(taskID);
       const resultURL = getImageURL(result);
       if (!resultURL) throw new Error(getAPIMessage(result) || 'The image service did not return an image URL.');
-      await message.send({ body: '❑ Here is your Image.', image: resultURL });
+      await message.send({ body: 'Here is your image.', image: resultURL });
       await setProgress(message, '✅');
     } catch (error) {
       await setProgress(message, '❌');

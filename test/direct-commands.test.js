@@ -8,6 +8,8 @@ const singCommand = require('../scripts/cmds/sing');
 const alldlCommand = require('../scripts/cmds/alldl');
 const cmdCommand = require('../scripts/cmds/cmd');
 const uptimeCommand = require('../scripts/cmds/uptime');
+const pfpCommand = require('../scripts/cmds/pfp');
+const changeNameCommand = require('../scripts/cmds/changename');
 
 test('effect command sends the selected effect and reports success', async () => {
   const calls = [];
@@ -118,4 +120,71 @@ test('cmd installer validates file names and normalizes source URLs', () => {
     cmdCommand.extractInlineCode('!cmd install sample.js module.exports = { config: { name: "sample" }, onStart() {} };', 'sample.js'),
     'module.exports = { config: { name: "sample" }, onStart() {} };'
   );
+});
+
+test('pfp sends a profile picture selected by user ID', async () => {
+  const calls = [];
+  await pfpCommand.onStart({
+    api: {
+      getUserInfo: async () => ({ userID: '42', username: 'alice', profilePicUrl: 'https://cdn.example/alice.jpg' }),
+      sendPhotoFromUrl: async (...args) => calls.push(args)
+    },
+    args: ['42'],
+    event: { messageID: 'command-1' },
+    message: { reply: async () => { throw new Error('unexpected reply'); } },
+    senderID: 'sender-1',
+    threadID: 'thread-1'
+  });
+
+  assert.deepEqual(calls, [[
+    'thread-1',
+    'https://cdn.example/alice.jpg',
+    { replyTo: 'command-1' }
+  ]]);
+});
+
+test('pfp resolves a username mention and a replied message owner', async () => {
+  const calls = [];
+  const api = {
+    getUserInfoByUsername: async (username) => ({ userID: '43', username, profilePicUrl: 'https://cdn.example/bob.jpg' }),
+    getMessagesAround: async () => [{ messageID: 'quoted-1', sender: { pk: '44', username: 'carol' } }],
+    getUserInfo: async (userID) => ({ userID, username: 'carol', profilePicUrl: 'https://cdn.example/carol.jpg' }),
+    sendPhotoFromUrl: async (...args) => calls.push(args)
+  };
+
+  await pfpCommand.onStart({
+    api,
+    args: [],
+    event: { mentions: { bob: [0, 4] }, messageID: 'command-2' },
+    message: { reply: async () => { throw new Error('unexpected reply'); } },
+    senderID: 'sender-1',
+    threadID: 'thread-1'
+  });
+  await pfpCommand.onStart({
+    api,
+    args: [],
+    event: { replyTo: 'quoted-1', messageID: 'command-3' },
+    message: { reply: async () => { throw new Error('unexpected reply'); } },
+    senderID: 'sender-1',
+    threadID: 'thread-1'
+  });
+
+  assert.deepEqual(calls, [
+    ['thread-1', 'https://cdn.example/bob.jpg', { replyTo: 'command-2' }],
+    ['thread-1', 'https://cdn.example/carol.jpg', { replyTo: 'command-3' }]
+  ]);
+});
+
+test('changename updates the current group title', async () => {
+  const calls = [];
+  const replies = [];
+  await changeNameCommand.onStart({
+    api: { changeThreadTitle: async (...args) => { calls.push(args); return { success: true }; } },
+    args: ['Nerds', 'United'],
+    message: { reply: async (text) => replies.push(text) },
+    threadID: 'thread-1'
+  });
+
+  assert.deepEqual(calls, [['thread-1', 'Nerds United']]);
+  assert.deepEqual(replies, ['Group name changed to "Nerds United".']);
 });

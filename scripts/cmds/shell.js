@@ -18,14 +18,14 @@ module.exports = {
     aliases: ['sh'],
     author: 'Neoaz 🐊',
     category: 'owner',
-    role: 2,
+    role: 3,
     description: 'Run a shell command on the bot host.',
     usage: '{pn} <command>',
     allowWhenMuted: true
   },
 
   async onStart({ args, message, role }) {
-    if (Number(role) < 2) return;
+    if (Number(role) < 3) return;
     const command = args.join(' ').trim();
     if (!command) return message.reply('Usage: !shell <command>');
 

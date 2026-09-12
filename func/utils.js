@@ -23,7 +23,7 @@ function stringifyThreadInfo(info) {
   const name = info?.name || info?.threadName || 'Direct message';
   const members = info?.participantCount || info?.participants?.length || info?.users?.length || 'unknown';
   const muted = info?.isMuted === true ? 'yes' : 'no';
-  return `❑ Thread: ${name}\n❑ Members: ${members}\n❑ Muted by bot: ${muted}`;
+  return `Thread: ${name}\nMembers: ${members}\nMuted by bot: ${muted}`;
 }
 
 module.exports = { formatDuration, toNumber, stringifyThreadInfo };

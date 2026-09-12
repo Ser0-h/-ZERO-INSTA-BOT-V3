@@ -21,14 +21,14 @@ module.exports = {
           const sender = item.senderID || item.userID || 'unknown';
           return `${sender}: ${String(item.body || item.text || '[attachment]').slice(0, 180)}`;
         });
-        return message.reply(`❑ Recent messages\n${lines.join('\n')}`);
+        return message.reply(`Recent messages\n\n${lines.join('\n')}`);
       }
     } catch (error) {
       store.logger.warn('Remote history lookup failed:', error.message);
     }
 
     const local = store.getHistory(threadID, limit);
-    if (!local.length) return message.reply('❑ No recent messages are available.');
-    return message.reply(`❑ Recent messages\n${local.map((item) => `${item.senderID || 'unknown'}: ${item.body || '[attachment]'}`).join('\n')}`);
+    if (!local.length) return message.reply('No recent messages are available.');
+    return message.reply(`Recent messages\n\n${local.map((item) => `${item.senderID || 'unknown'}: ${item.body || '[attachment]'}`).join('\n')}`);
   }
 };

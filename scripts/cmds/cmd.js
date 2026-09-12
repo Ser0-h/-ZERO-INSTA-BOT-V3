@@ -14,7 +14,7 @@ module.exports = {
     aliases: ['command'],
     version: '1.0',
     author: 'Neoaz 🐊',
-    role: 2,
+    role: 3,
     category: 'owner',
     description: 'Load, unload, and install command or event files.',
     usage: '{pn} <load|unload|install> [event] <name or url> [file.js]'
@@ -27,12 +27,12 @@ module.exports = {
     const name = action === 'loadall' ? null : normalizeFileName(args[index]);
 
     if (action === 'load' || action === 'loadall') {
-      if (action === 'load' && !name) return message.reply('❏ Please enter a file name to load.');
+      if (action === 'load' && !name) return message.reply('Please enter a file name to load.');
       return reloadFiles({ config, functions, folder, name, loadAll: action === 'loadall', message });
     }
 
     if (action === 'unload') {
-      if (!name) return message.reply('❏ Please enter a file name to unload.');
+      if (!name) return message.reply('Please enter a file name to unload.');
       return unloadFile({ config, functions, folder, name, message });
     }
 
@@ -41,13 +41,13 @@ module.exports = {
     }
 
     return message.reply([
-      '❏ Usage:',
-      '➥ !cmd load <file.js>',
-      '➥ !cmd loadall [event]',
-      '➥ !cmd unload <file.js>',
-      '➥ !cmd install <url> <file.js>',
-      '➥ !cmd install event <url> <file.js>',
-      '➥ Inline code is accepted when the file name ends in .js.'
+      'Usage:',
+      '!cmd load <file.js>',
+      '!cmd loadall [event]',
+      '!cmd unload <file.js>',
+      '!cmd install <url> <file.js>',
+      '!cmd install event <url> <file.js>',
+      'Inline code is accepted when the file name ends in .js.'
     ].join('\n'));
   }
 };
@@ -57,7 +57,7 @@ async function reloadFiles({ config, functions, folder, name, loadAll, message }
   const directory = config[spec.directory];
   const target = name || '';
   if (!loadAll && !fs.existsSync(path.join(directory, target))) {
-    return message.reply(`❏ ${spec.label} file "${target}" was not found.`);
+    return message.reply(`${spec.label} file "${target}" was not found.`);
   }
 
   config[spec.excluded] = (config[spec.excluded] || []).filter((file) => file !== target);
@@ -69,9 +69,9 @@ async function reloadFiles({ config, functions, folder, name, loadAll, message }
 
 async function unloadFile({ config, functions, folder, name, message }) {
   const spec = FOLDERS[folder];
-  if (folder === 'cmd' && name === 'cmd.js') return message.reply('❏ The installer command cannot unload itself.');
+  if (folder === 'cmd' && name === 'cmd.js') return message.reply('The installer command cannot unload itself.');
   const filePath = path.join(config[spec.directory], name);
-  if (!fs.existsSync(filePath)) return message.reply(`❏ ${spec.label} file "${name}" was not found.`);
+  if (!fs.existsSync(filePath)) return message.reply(`${spec.label} file "${name}" was not found.`);
 
   config[spec.excluded] = config[spec.excluded] || [];
   if (!config[spec.excluded].includes(name)) config[spec.excluded].push(name);
@@ -86,7 +86,7 @@ async function installFile({ args, body, config, event, functions, folder, index
   const source = args[index];
   const fileToken = values.find((value) => /\.js$/i.test(value)) || source;
   const name = normalizeFileName(fileToken);
-  if (!name) return message.reply('❏ Please provide a valid file name ending in .js.');
+  if (!name) return message.reply('Please provide a valid file name ending in .js.');
 
   let rawCode;
   try {
@@ -98,13 +98,13 @@ async function installFile({ args, body, config, event, functions, folder, index
   } catch (error) {
     return message.reply(`❌ Could not download the ${spec.label}: ${error.message}`);
   }
-  if (!rawCode?.trim()) return message.reply('❏ Could not find command code to install.');
+  if (!rawCode?.trim()) return message.reply('Could not find command code to install.');
 
   const targetPath = path.join(config[spec.directory], name);
   if (fs.existsSync(targetPath)) {
-    const prompt = await message.reply(`❏ ${spec.label} file already exists. React to this message to overwrite it.`);
+    const prompt = await message.reply(`${spec.label} file already exists. React to this message to overwrite it.`);
     const promptID = getMessageID(prompt);
-    if (!promptID) return message.reply('❏ I could not register the overwrite confirmation.');
+    if (!promptID) return message.reply('I could not register the overwrite confirmation.');
     message.setReactionHandler(async (context) => {
       if (String(context.senderID) !== String(event.senderID)) return;
       if (!isCreatedReaction(context.reaction)) return;

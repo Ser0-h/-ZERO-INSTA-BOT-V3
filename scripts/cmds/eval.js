@@ -7,7 +7,7 @@ module.exports = {
     name: 'eval',
     version: '1.7',
     author: 'Neoaz 🐊',
-    role: 2,
+    role: 3,
     category: 'owner',
     description: 'Run JavaScript as the bot owner.',
     usage: '{pn} <code to test>',
@@ -15,7 +15,7 @@ module.exports = {
   },
 
   async onStart({ api, args, event, message, threadID, role, config, store, logger, functions, globals }) {
-    if (Number(role) < 2) return;
+    if (Number(role) < 3) return;
     const code = args.join(' ').trim();
     if (!code) return message.reply('Usage: !eval <code to test>');
 
