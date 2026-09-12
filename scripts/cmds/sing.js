@@ -30,7 +30,7 @@ module.exports = {
       if (response.status >= 400) throw new Error(`Search failed (status ${response.status}).`);
       const selected = response.data?.results?.[0];
       if (!selected) throw new Error('No songs found for your query.');
-      const streamUrl = selected.audio_url || selected.audio_cdn_url;
+      const streamUrl = selected.audio_cdn_url || selected.audio_url;
       if (!streamUrl) throw new Error('No playable stream was found for that result.');
 
       await api.sendVoiceFromUrl(threadID, streamUrl, {
