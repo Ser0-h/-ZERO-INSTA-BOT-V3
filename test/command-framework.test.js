@@ -743,8 +743,41 @@ test('avatar effect command lists effects and sends the resolved style', async (
   assert.match(replies[0], /heart/);
 
   await avatarCommand.onStart({ ...context, args: ['heart', 'hello'] });
-  assert.deepEqual(sent[0], ['thread-1', 'hello', 'love', undefined]);
+  assert.equal(sent[0][0], 'thread-1');
+  assert.equal(sent[0][1], 'hello');
+  assert.equal(sent[0][2], 'love');
+  assert.match(sent[0][3].media, /^data:image\/gif;base64,/);
   assert.match(replies[1], /Avatar effect sent: love/);
+});
+
+test('avatar effect command prefers an explicit media URL over the built-in clip', async () => {
+  const avatarCommand = require('../scripts/cmds/aveffect');
+  const sent = [];
+  const context = {
+    api: {
+      listAvatarEffects: () => [{ name: 'love', style: 1000, aliases: [] }],
+      sendAvatarEffect: async (...args) => { sent.push(args); return { effect: args[2] }; }
+    },
+    threadID: 'thread-1',
+    event: {},
+    args: ['love', 'hi', 'https://cdn.example/clip.gif'],
+    message: { reply: async () => {}, react: async () => {} }
+  };
+  await avatarCommand.onStart(context);
+  assert.deepEqual(sent[0], [
+    'thread-1',
+    'hi',
+    'love',
+    { mediaUrl: 'https://cdn.example/clip.gif' }
+  ]);
+});
+
+test('effect-media exposes a bundled animation for every avatar effect', () => {
+  const { getEffectMedia } = require('../src/effect-media');
+  for (const effect of ['love', 'angry', 'laugh', 'cry']) {
+    assert.match(getEffectMedia(effect), /^data:image\/gif;base64,/);
+  }
+  assert.equal(getEffectMedia('nonexistent'), null);
 });
 
 test('avatar effect command rejects unknown effects', async () => {
