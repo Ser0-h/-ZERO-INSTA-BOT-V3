@@ -615,6 +615,29 @@ test('normalizes raw participant update aliases for welcome events', () => {
   assert.deepEqual(result.event.addedParticipants, [{ pk: '42', username: 'alice' }]);
 });
 
+test('normalizes sanitized Instagram XMAT membership events', async () => {
+  const result = normalizeEvent(null, {
+    type: 'thread_update',
+    eventType: 'thread_update',
+    threadID: 'group-1',
+    updateType: 'ADD_PARTICIPANT_XMAT',
+    action: 'join',
+    isGroup: true,
+    addedParticipants: [{ username: 'mahin_abid_777' }]
+  });
+  const replies = [];
+
+  assert.equal(result.event.type, 'event');
+  assert.equal(result.event.eventType, 'thread_update');
+  assert.equal(result.event.action, 'join');
+  await welcomeCommand.onStart({
+    config: { welcomeMessages: true },
+    event: result.event,
+    message: { send: async (content) => replies.push(content) }
+  });
+  assert.deepEqual(replies, ['❑ Welcome to the group, mahin_abid_777!']);
+});
+
 test('does not run any-event hooks for blocked threads', async () => {
   let calls = 0;
   const commands = new Map([['audit', {
