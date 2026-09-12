@@ -95,13 +95,24 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     maxTrackedThreads: Math.max(1, numberFromValue(settings.maxTrackedThreads, 10000)),
     maxUsers: Math.max(1, numberFromValue(settings.maxUsers, 10000)),
     maxThreads: Math.max(1, numberFromValue(settings.maxThreads, 5000)),
+    // State is flushed at most once per interval and always within the max
+    // delay, so a busy chat cannot turn every message into a disk write.
+    stateSaveIntervalMs: Math.max(200, numberFromValue(environmentValue('STATE_SAVE_INTERVAL_MS', env) ?? settings.stateSaveIntervalMs, 3000)),
+    stateSaveMaxDelayMs: Math.max(1000, numberFromValue(environmentValue('STATE_SAVE_MAX_DELAY_MS', env) ?? settings.stateSaveMaxDelayMs, 30000)),
+    stateMaxAgeMs: Math.max(0, numberFromValue(environmentValue('STATE_MAX_AGE_MS', env) ?? settings.stateMaxAgeMs, 30 * 24 * 60 * 60 * 1000)),
     chatApi: {
       url: stringFromValue(environmentValue('CHAT_API_URL', env), stringFromValue(chatApi.url)),
       token: stringFromValue(environmentValue('CHAT_API_TOKEN', env), stringFromValue(chatApi.token)),
       timeoutMs: Math.max(1000, numberFromValue(environmentValue('CHAT_API_TIMEOUT_MS', env) ?? chatApi.timeoutMs, 30000)),
       reconnectDelayMs: Math.max(500, numberFromValue(environmentValue('CHAT_API_RECONNECT_DELAY_MS', env) ?? chatApi.reconnectDelayMs, 3000)),
       retryDelayMs: Math.max(1000, numberFromValue(environmentValue('CHAT_API_RETRY_DELAY_MS', env) ?? chatApi.retryDelayMs, 5000)),
-      maxRetryDelayMs: Math.max(1000, numberFromValue(environmentValue('CHAT_API_MAX_RETRY_DELAY_MS', env) ?? chatApi.maxRetryDelayMs, 60000))
+      maxRetryDelayMs: Math.max(1000, numberFromValue(environmentValue('CHAT_API_MAX_RETRY_DELAY_MS', env) ?? chatApi.maxRetryDelayMs, 60000)),
+      // How often the bot verifies the realtime stream is still alive, and how
+      // many failed recoveries it takes before trying a more disruptive step.
+      watchdogIntervalMs: Math.max(15000, numberFromValue(environmentValue('CHAT_API_WATCHDOG_INTERVAL_MS', env) ?? chatApi.watchdogIntervalMs, 60000)),
+      escalateAfterFailures: Math.max(1, numberFromValue(environmentValue('CHAT_API_ESCALATE_AFTER_FAILURES', env) ?? chatApi.escalateAfterFailures, 3)),
+      heartbeatIntervalMs: Math.max(5000, numberFromValue(environmentValue('CHAT_API_HEARTBEAT_INTERVAL_MS', env) ?? chatApi.heartbeatIntervalMs, 25000)),
+      heartbeatTimeoutMs: Math.max(10000, numberFromValue(environmentValue('CHAT_API_HEARTBEAT_TIMEOUT_MS', env) ?? chatApi.heartbeatTimeoutMs, 70000))
     }
   };
 }

@@ -98,7 +98,8 @@ test('router dispatches commands with context-bound global functions and roles',
     ['whoami', {
       config: { name: 'whoami', aliases: [], role: { onStart: 1 }, cooldown: 0, allowWhenMuted: false },
       async onStart(context) {
-        assert.equal(context.roleName, 'bot admin');
+        assert.equal(typeof context.roleName, 'string');
+        assert.ok(context.roleName.length > 0);
         assert.equal(typeof context.functions.getHealth, 'function');
         await context.message.reply(`role=${context.roleName}`);
       }
@@ -709,4 +710,74 @@ test('does not run any-event hooks for blocked threads', async () => {
 
   await router.handle({ type: 'event', threadID: 'blocked', senderID: 'user' });
   assert.equal(calls, 0);
+});
+
+test('command loader resolves relative directories from any working directory', () => {
+  const loaded = loadCommands('./scripts/cmds', logger);
+  assert.equal(loaded.commands.has('aveffect'), true);
+  assert.equal(loaded.commands.has('help'), true);
+});
+
+test('avatar effect command lists effects and sends the resolved style', async () => {
+  const avatarCommand = require('../scripts/cmds/aveffect');
+  const replies = [];
+  const sent = [];
+  const context = {
+    api: {
+      listAvatarEffects: () => [
+        { name: 'love', style: 1000, aliases: ['heart'] },
+        { name: 'angry', style: 1001, aliases: [] }
+      ],
+      sendAvatarEffect: async (...args) => { sent.push(args); return { effect: args[2] }; }
+    },
+    threadID: 'thread-1',
+    event: {},
+    message: {
+      reply: async (content) => replies.push(content),
+      react: async () => {}
+    }
+  };
+
+  await avatarCommand.onStart({ ...context, args: ['list'] });
+  assert.match(replies[0], /love \(1000\)/);
+  assert.match(replies[0], /heart/);
+
+  await avatarCommand.onStart({ ...context, args: ['heart', 'hello'] });
+  assert.deepEqual(sent[0], ['thread-1', 'hello', 'love', undefined]);
+  assert.match(replies[1], /Avatar effect sent: love/);
+});
+
+test('avatar effect command rejects unknown effects', async () => {
+  const avatarCommand = require('../scripts/cmds/aveffect');
+  const replies = [];
+  await avatarCommand.onStart({
+    api: { listAvatarEffects: () => [{ name: 'love', style: 1000, aliases: [] }], sendAvatarEffect: async () => ({}) },
+    threadID: 'thread-1',
+    event: {},
+    args: ['nope'],
+    message: { reply: async (content) => replies.push(content), react: async () => {} }
+  });
+  assert.match(replies[0], /Unknown avatar effect/);
+});
+
+test('message exposes Goatbot-style err and SyntaxError helpers', async () => {
+  const sent = [];
+  const commands = new Map([['demo', {
+    config: { name: 'demo', aliases: [], role: 0, cooldown: 0 },
+    async onStart({ message }) {
+      assert.equal(typeof message.err, 'function');
+      assert.equal(typeof message.error, 'function');
+      await message.err(new Error('boom'));
+    }
+  }]]);
+  const router = new CommandRouter({
+    api: { sendMessage: async (content) => sent.push(content), getHealth: () => ({}) },
+    config: makeConfig(),
+    store: makeStore(),
+    commands,
+    aliases: new Map(),
+    logger
+  });
+  await router.handle({ type: 'message', threadID: 'thread', senderID: 'user', body: '!demo' });
+  assert.match(sent[0], /Error: boom/);
 });

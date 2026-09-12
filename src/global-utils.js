@@ -24,4 +24,10 @@ function ensureGlobalUtils() {
   return global.utils;
 }
 
+// Command modules destructure `global.utils` at require time. Installing it as a
+// side effect of loading this module means a command file can always bootstrap
+// the utilities by requiring it first, regardless of load order. This mirrors
+// how Goatbot guarantees `global.utils` before any command is loaded.
+ensureGlobalUtils();
+
 module.exports = { createGlobalUtils, ensureGlobalUtils };

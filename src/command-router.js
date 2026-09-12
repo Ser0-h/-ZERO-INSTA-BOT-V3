@@ -27,6 +27,9 @@ function createGlobalFunctions({ api, config, store, logger, language, getComman
     getLang: language || ((_key, fallback) => fallback || ''),
     sendMessage: (threadID, content) => api.sendMessage(content, String(threadID)),
     sendEffects: (threadID, text, effect) => api.sendEffects(String(threadID), text, effect),
+    sendAvatarEffect: (threadID, text, effect, options) => api.sendAvatarEffect(String(threadID), text, effect, options),
+    listAvatarEffects: () => (typeof api.listAvatarEffects === 'function' ? api.listAvatarEffects() : []),
+    listEffects: () => (typeof api.listEffects === 'function' ? api.listEffects() : { effects: [], avatarEffects: [] }),
     stickerMusic: (threadID, queryOrTrack, options) => api.stickerMusic(String(threadID), queryOrTrack, options),
     sendPhotoFromUrl: (threadID, url, options) => api.sendPhotoFromUrl(String(threadID), url, options),
     sendVoiceFromUrl: (threadID, url, options) => api.sendVoiceFromUrl(String(threadID), url, options),
@@ -61,6 +64,9 @@ function createContextFunctions({ api, config, store, router, logger, language, 
     reply: (content) => message.reply(content),
     sendMessage: (content, targetThreadID = threadID) => api.sendMessage(content, String(targetThreadID)),
     sendEffects: (text, effect) => api.sendEffects(threadID, text, effect),
+    sendAvatarEffect: (text, effect, options) => api.sendAvatarEffect(threadID, text, effect, options),
+    listAvatarEffects: () => (typeof api.listAvatarEffects === 'function' ? api.listAvatarEffects() : []),
+    listEffects: () => (typeof api.listEffects === 'function' ? api.listEffects() : { effects: [], avatarEffects: [] }),
     stickerMusic: (queryOrTrack, options) => api.stickerMusic(threadID, queryOrTrack, options),
     sendPhotoFromUrl: (url, options) => api.sendPhotoFromUrl(threadID, url, options),
     sendVoiceFromUrl: (url, options) => api.sendVoiceFromUrl(threadID, url, options),
@@ -298,7 +304,7 @@ class CommandRouter {
       const suggestion = this.suggestCommand(requestedName);
       await this.safeSend(event, [
         `I do not recognize ${prefix}${requestedName}.`,
-        suggestion ? `Did you mean ${prefix}${suggestion}?` : '',
+        suggestion ? `Did you mean: ${prefix}${suggestion}?` : '',
         `Use ${prefix}help to see available commands.`
       ].filter(Boolean).join('\n'));
       return true;
@@ -429,6 +435,14 @@ class CommandRouter {
     const context = this.createContext(event, tokenize(body), command.config.name);
     context.command = command;
     context.reply = registered;
+    // Goatbot passes an `onReply` entry as `Reply`; mirror it so command
+    // modules written for Goatbot read the same fields (author/commandName/…).
+    context.Reply = {
+      commandName: registered.commandName,
+      author: registered.senderID,
+      messageID: registered.targetMessageID || event.messageID || null,
+      delete: () => this.replyHandlers.delete(String(registered.targetMessageID || event.messageID))
+    };
     try {
       if (registered.handler) await registered.handler(context);
       else await this.invoke(command, 'onReply', event, tokenize(body), { reply: registered, record: true });
@@ -451,6 +465,13 @@ class CommandRouter {
     const context = this.createContext(event, [], command.config.name);
     context.command = command;
     context.reaction = event.reaction;
+    context.Reaction = {
+      commandName: registered.commandName,
+      author: registered.senderID,
+      messageID: event.messageID || null,
+      reaction: event.reaction,
+      delete: () => this.reactionHandlers.delete(String(event.messageID))
+    };
     try {
       if (registered.handler) await registered.handler(context);
       else await this.invoke(command, 'onReaction', event, [], { reaction: event.reaction, record: true });
@@ -545,21 +566,45 @@ class CommandRouter {
     const message = {
       id: event.messageID || null,
       threadID,
-      reply: async (content) => {
+      event,
+      reply: async (content, callback) => {
+        let result;
+        let replied = false;
         if (typeof content === 'string' && event.messageID && this.api.replyToMessage) {
           try {
-            return await this.api.replyToMessage(threadID, content, event.messageID);
+            result = await this.api.replyToMessage(threadID, content, event.messageID);
+            replied = true;
           } catch (error) {
             this.logger.warn(`Reply request failed for ${event.messageID}; sending normally:`, error.message);
           }
         }
-        return this.api.sendMessage(content, threadID);
+        if (!replied) result = await this.api.sendMessage(content, threadID);
+        if (typeof callback === 'function') await callback(null, result);
+        return result;
       },
-      send: (content) => this.api.sendMessage(content, threadID),
-      react: (reaction) => this.api.sendReaction(reaction, event.messageID, threadID),
-       unsend: () => event.messageID
-         ? (this.api.unsendMessageFast || this.api.unsendMessage).call(this.api, event.messageID, threadID)
-         : null,
+      send: async (content, callback) => {
+        const result = await this.api.sendMessage(content, threadID);
+        if (typeof callback === 'function') await callback(null, result);
+        return result;
+      },
+      react: (reaction, targetMessageID = event.messageID) => this.api.sendReaction(reaction, targetMessageID, threadID),
+      reaction: (reaction, targetMessageID = event.messageID) => this.api.sendReaction(reaction, targetMessageID, threadID),
+      unsend: (targetMessageID = event.messageID) => targetMessageID
+        ? (this.api.unsendMessageFast || this.api.unsendMessage).call(this.api, targetMessageID, threadID)
+        : null,
+      // Goatbot exposes `message.err` / `message.error`; keep the same shape so
+      // commands written for Goatbot port over without edits.
+      err: async (error) => {
+        const detail = this.errorDetail(error);
+        try {
+          return await message.reply(`An error occurred: ${detail}`);
+        } catch (_) {
+          return null;
+        }
+      },
+      SyntaxError: async () => message.reply(
+        this.language('system.syntax', `Wrong usage. Use ${this.store.getPrefix(threadID, this.config.prefix)}help ${commandName} for help.`)
+      ),
       setReply: (handler, ttlMs = 10 * 60 * 1000, targetMessageID = event.messageID) => {
         const replyHandler = typeof handler === 'function' ? handler : command?.onReply;
         if (!targetMessageID || typeof replyHandler !== 'function') return null;
@@ -567,6 +612,7 @@ class CommandRouter {
           commandName,
           handler: replyHandler,
           senderID: String(event.senderID || ''),
+          targetMessageID: String(targetMessageID),
           expiresAt: Date.now() + Math.max(1000, Number(ttlMs) || 0)
         });
         return targetMessageID;
@@ -577,11 +623,14 @@ class CommandRouter {
         this.reactionHandlers.set(String(targetMessageID), {
           commandName,
           handler: reactionHandler,
+          senderID: String(event.senderID || ''),
+          targetMessageID: String(targetMessageID),
           expiresAt: Date.now() + Math.max(1000, Number(ttlMs) || 0)
         });
         return targetMessageID;
       }
     };
+    message.error = message.err;
 
     const context = {
       api: this.api,
@@ -604,6 +653,13 @@ class CommandRouter {
       threadID,
       isGroup: event.isGroup === true,
       message
+    };
+    context.removeCommandNameFromBody = (body_, prefix_, commandName_) => {
+      const text = body_ ?? event.body ?? '';
+      const effectivePrefix = prefix_ ?? context.prefix;
+      const effectiveName = commandName_ ?? commandName;
+      if (typeof text !== 'string') throw new Error('removeCommandNameFromBody(body) expects a string body.');
+      return text.replace(new RegExp(`^${effectivePrefix}(\\s+|)${effectiveName}`, 'i'), '').trim();
     };
     context.functions = createContextFunctions({
       api: this.api,
@@ -637,6 +693,14 @@ class CommandRouter {
 
   send(event, content) {
     return this.api.sendMessage(content, String(event.threadID));
+  }
+
+  /** Compact, secret-free error text safe to send back into a chat. */
+  errorDetail(error) {
+    if (typeof error === 'string') return error.slice(0, 300);
+    const name = error?.name || 'Error';
+    const message = error?.message || String(error || 'unknown error');
+    return `${name}: ${message}`.replace(/\s+/g, ' ').slice(0, 300);
   }
 }
 

@@ -19,10 +19,18 @@ class Store {
     this.maxHistory = maxHistory;
     this.maxUsers = Math.max(1, Number(limits.maxUsers) || 10000);
     this.maxThreads = Math.max(1, Number(limits.maxThreads) || 5000);
+    this.saveIntervalMs = Math.max(200, Number(limits.stateSaveIntervalMs) || 3000);
+    this.saveMaxDelayMs = Math.max(this.saveIntervalMs, Number(limits.stateSaveMaxDelayMs) || 30000);
+    this.maxAgeMs = Math.max(0, Number(limits.stateMaxAgeMs) || 0);
     this.state = blankState();
     this.startedAt = Date.now();
     this.saveTimer = null;
     this.savePromise = Promise.resolve();
+    this.dirty = false;
+    this.saving = false;
+    this.firstDirtyAt = null;
+    this.lastSavedAt = 0;
+    this.closed = false;
   }
 
   async init() {
@@ -37,6 +45,30 @@ class Store {
     } catch (error) {
       if (error.code !== 'ENOENT') this.logger.warn('Could not load state:', error.message);
     }
+    this.pruneStale();
+  }
+
+  /**
+   * Drop threads and users nobody has touched for a long time. Without this the
+   * state file grows forever and every save gets slower.
+   */
+  pruneStale(now = Date.now()) {
+    if (!this.maxAgeMs) return 0;
+    let removed = 0;
+    for (const collection of ['threads', 'users']) {
+      for (const [key, entry] of Object.entries(this.state[collection])) {
+        const seen = Number(entry?.lastSeenAt) || 0;
+        if (seen && now - seen > this.maxAgeMs) {
+          delete this.state[collection][key];
+          removed += 1;
+        }
+      }
+    }
+    if (removed) {
+      this.dirty = true;
+      this.logger?.debug?.(`Pruned ${removed} stale state entries.`);
+    }
+    return removed;
   }
 
   thread(threadID) {
@@ -154,30 +186,63 @@ class Store {
     };
   }
 
+  /**
+   * Coalesce writes: a burst of messages produces one save per interval instead
+   * of one serialization of the whole state per message.
+   */
   saveSoon() {
+    if (this.closed) return;
+    this.dirty = true;
+    if (this.firstDirtyAt === null) this.firstDirtyAt = Date.now();
     if (this.saveTimer) return;
+    const waited = Date.now() - this.firstDirtyAt;
+    const delay = Math.max(0, Math.min(this.saveIntervalMs, this.saveMaxDelayMs - waited));
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       this.save().catch((error) => this.logger.warn('Could not save state:', error.message));
-    }, 200);
+    }, delay);
+    this.saveTimer.unref?.();
   }
 
-  async save() {
+  async save({ force = false } = {}) {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
+    if (!force && !this.dirty) return this.savePromise;
+    this.dirty = false;
+    this.firstDirtyAt = null;
     const temporary = `${this.filePath}.${process.pid}.tmp`;
     this.savePromise = this.savePromise.catch(() => {}).then(async () => {
-      await fs.promises.mkdir(path.dirname(this.filePath), { recursive: true });
-      await fs.promises.writeFile(temporary, JSON.stringify(this.state, null, 2), { mode: 0o600 });
-      await fs.promises.rename(temporary, this.filePath);
+      this.saving = true;
+      try {
+        await fs.promises.mkdir(path.dirname(this.filePath), { recursive: true });
+        await fs.promises.writeFile(temporary, JSON.stringify(this.state), { mode: 0o600 });
+        await fs.promises.rename(temporary, this.filePath);
+        this.lastSavedAt = Date.now();
+      } catch (error) {
+        // Keep the change queued so the next tick retries, and never leave a
+        // half-written temporary file behind.
+        this.dirty = true;
+        await fs.promises.rm(temporary, { force: true }).catch(() => {});
+        throw error;
+      } finally {
+        this.saving = false;
+      }
     });
     return this.savePromise;
   }
 
   async close() {
-    return this.save();
+    this.closed = true;
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    this.pruneStale();
+    return this.save({ force: true }).catch((error) => {
+      this.logger.warn('Could not save state on shutdown:', error.message);
+    });
   }
 }
 
