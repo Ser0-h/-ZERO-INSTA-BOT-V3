@@ -31,8 +31,6 @@ class InstagramBot {
     this.reloadTimer = null;
     this.reloadPromise = null;
     this.reloadQueued = false;
-    this.sessionSaveTimer = null;
-    this.sessionSavePromise = null;
     this.stopPromise = null;
   }
 
@@ -277,10 +275,6 @@ class InstagramBot {
     if (this.stopPromise) return this.stopPromise;
     this.stopPromise = (async () => {
       this.stopping = true;
-      if (this.sessionSaveTimer) {
-        clearInterval(this.sessionSaveTimer);
-        this.sessionSaveTimer = null;
-      }
       this.closeCommandWatchers();
       this.logger.info('Stopping bot...');
       if (this.api) {
