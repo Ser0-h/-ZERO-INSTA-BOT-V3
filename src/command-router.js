@@ -1,12 +1,13 @@
 'use strict';
 
+const globalFunctions = require('../func/global-functions');
+
 const ROLES = Object.freeze({
   USER: 0,
   GROUP_ADMIN: 1,
   BOT_ADMIN: 2,
   OWNER: 3
 });
-
 const ROLE_NAMES = Object.freeze({
   [ROLES.USER]: 'user',
   [ROLES.GROUP_ADMIN]: 'group admin',
@@ -20,6 +21,7 @@ function createGlobalFunctions({ api, config, store, logger, language, getComman
     config,
     store,
     logger,
+    ...globalFunctions,
     commands: getCommands,
     eventCommands: getEventCommands,
     commandEntries: getCommandEntries,
@@ -60,6 +62,7 @@ function createGlobalFunctions({ api, config, store, logger, language, getComman
 function createContextFunctions({ api, config, store, router, logger, language, event, message }) {
   const threadID = String(event.threadID);
   return {
+    ...globalFunctions,
     send: (content) => message.send(content),
     reply: (content) => message.reply(content),
     sendMessage: (content, targetThreadID = threadID) => api.sendMessage(content, String(targetThreadID)),

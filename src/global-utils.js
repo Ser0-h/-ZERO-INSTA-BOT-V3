@@ -1,6 +1,7 @@
 'use strict';
 
 const coreUtils = require('../func/utils');
+const globalFunctions = require('../func/global-functions');
 const replyUtils = require('../func/reply');
 const progressUtils = require('../func/progress');
 const mediaUtils = require('../func/media');
@@ -10,6 +11,7 @@ const threadUserUtils = require('../scripts/utils/thread-users');
 function createGlobalUtils(dynamic = {}) {
   return {
     ...coreUtils,
+    ...globalFunctions,
     ...replyUtils,
     ...progressUtils,
     ...mediaUtils,

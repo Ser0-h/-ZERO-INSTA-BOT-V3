@@ -99,6 +99,52 @@ chat.api.toke.neokex.ica.token.can.change.a9y.2ime.ok
 
 Aliases are available through `!help <command>`.
 
+## Writing commands and events
+
+The bot follows the Goatbot-V2 module contract. A module lives in `scripts/cmds`
+(commands) or `scripts/events` (event commands) and exports a `config` plus one
+or more hooks:
+
+```js
+const { getStreamFromURL } = global.utils;
+
+module.exports = {
+  config: { name: 'example', aliases: ['ex'], author: 'Saifullah Al Neoaz (NEOKEX)', category: 'general' },
+  async onStart({ api, args, event, message, threadID, prefix }) { ... },
+  async onChat({ event, message }) { ... },
+  async onReply({ Reply, event, message }) { ... },
+  async onReaction({ Reaction, event, message }) { ... },
+  async onEvent({ event, message }) { ... },
+  async onAnyEvent({ event }) { ... }
+};
+```
+
+Lifecycle hooks `onLoad` and `onUnload` run when commands are (re)loaded. Hooks
+receive a context with `api`, `config`, `store`, `event`, `args`, `message`,
+`getLang`, `role`, `roleName`, `threadID`, `prefix`, `commandName`,
+`removeCommandNameFromBody`, and `functions`/`utils` (the same object as
+`global.utils`).
+
+### Global functions
+
+`global.utils` exposes the Goatbot utility surface, available in every command
+and event without importing anything:
+
+| Area | Functions |
+| --- | --- |
+| Streams | `getStreamFromURL` (alias `getStreamFromUrl`), `getStreamsFromAttachment`, `downloadFile` |
+| Extensions | `getExtFromUrl`, `getExtFromMimeType`, `getExtFromAttachmentType` |
+| Types & numbers | `getType`, `isNumber`, `isHexColor`, `randomString`, `randomNumber`, `formatNumber`, `convertTime` |
+| Formatting | `getTime`, `splitPage`, `jsonStringifyColor`, `removeHomeDir`, `colors`, `log` |
+| Network | `translate`, `translateAPI`, `shortenURL` |
+| Messaging | `message(api, event)` helpers |
+
+```js
+const { getStreamFromURL, downloadFile, convertTime } = global.utils;
+const stream = await getStreamFromURL('https://example.com/clip.mp4');
+await downloadFile('https://example.com/a.png', './downloads/a.png');
+```
+
 ## Permissions
 
 - User: commands available to everyone
