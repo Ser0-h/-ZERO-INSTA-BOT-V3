@@ -9,6 +9,7 @@ const { loadCommands, loadEventCommands } = require('./command-loader');
 const { CommandRouter, createGlobalFunctions } = require('./command-router');
 const { createHandlerAction } = require('../bot/handler/handlerAction');
 const { createHandlerEvents } = require('../bot/handler/handlerEvents');
+const { retryUntilReady, isRetryableStartupError, sleep } = require('./retry');
 
 class InstagramBot {
   constructor(config) {
@@ -32,6 +33,10 @@ class InstagramBot {
     this.reloadPromise = null;
     this.reloadQueued = false;
     this.stopPromise = null;
+    this.realtimeConnected = false;
+    this.recoveryTimer = null;
+    this.recoveryPromise = null;
+    this.eventHandler = null;
   }
 
   async authenticate() {
@@ -39,9 +44,10 @@ class InstagramBot {
   }
 
   async start() {
-    if (this.started) return;
+    if (this.started) return this;
     this.stopping = false;
     this.sessionExpired = false;
+    this.accountRestricted = false;
     await fs.promises.mkdir(this.config.dataDir, { recursive: true });
     await this.store.init();
 
@@ -53,41 +59,102 @@ class InstagramBot {
     });
     this.commands = loaded.commands;
     this.eventCommands = loadedEvents.commands;
-    this.api = await this.authenticate();
-    this.user = await this.api.getCurrentUserID();
-    this.router = new CommandRouter({
-      api: this.api,
-      config: this.config,
-      store: this.store,
-      commands: loaded.commands,
-      aliases: loaded.aliases,
-      eventCommands: loadedEvents.commands,
-      logger: this.logger,
-      language: this.language
+    await retryUntilReady({
+      operation: () => this.startSession(loaded, loadedEvents),
+      initialDelayMs: this.config.chatApi.retryDelayMs,
+      maxDelayMs: this.config.chatApi.maxRetryDelayMs,
+      shouldRetry: (error) => !this.stopping && isRetryableStartupError(error),
+      onRetry: (error, { attempt, delayMs }) => {
+        this.logger.warn(`Chat API is unavailable (${error.message}). Retry ${attempt} in ${delayMs}ms.`);
+      }
     });
-    this.handlerEvents = createHandlerEvents(this.commands, this.eventCommands);
-    this.router.setHandlerEvents(this.handlerEvents);
-    this.globals = createGlobalFunctions({
-      api: this.api,
-      config: this.config,
-      store: this.store,
-      logger: this.logger,
-      language: this.language,
-      getCommands: () => this.router?.commands || this.commands,
-      getCommandEntries: () => this.router?.commandEntries() || [],
-      getEventCommands: () => this.router?.eventCommands || this.eventCommands,
-      reloadCommands: () => this.reloadCommands()
-    });
-    this.router.globals = this.globals;
-    this.installGlobalRegistry();
-    await this.runCommandLifecycle('onLoad');
-    this.watchCommandFiles();
+    return this;
+  }
 
-    this.api.on('connected', ({ method } = {}) => this.logger.info(`Instagram realtime connected via ${method || 'MQTT'}.`));
-    this.api.on('disconnected', () => this.logger.warn('Instagram realtime disconnected.'));
+  async startSession(loaded, loadedEvents) {
+    await this.waitForChatApi();
+    try {
+      this.api = await this.authenticate();
+      this.user = await this.api.getCurrentUserID();
+      this.router = new CommandRouter({
+        api: this.api,
+        config: this.config,
+        store: this.store,
+        commands: loaded.commands,
+        aliases: loaded.aliases,
+        eventCommands: loadedEvents.commands,
+        logger: this.logger,
+        language: this.language
+      });
+      this.handlerEvents = createHandlerEvents(this.commands, this.eventCommands);
+      this.router.setHandlerEvents(this.handlerEvents);
+      this.globals = createGlobalFunctions({
+        api: this.api,
+        config: this.config,
+        store: this.store,
+        logger: this.logger,
+        language: this.language,
+        getCommands: () => this.router?.commands || this.commands,
+        getCommandEntries: () => this.router?.commandEntries() || [],
+        getEventCommands: () => this.router?.eventCommands || this.eventCommands,
+        reloadCommands: () => this.reloadCommands()
+      });
+      this.router.globals = this.globals;
+      this.installGlobalRegistry();
+      this.bindApiEvents();
+      await this.runCommandLifecycle('onLoad');
+      this.watchCommandFiles();
+      this.eventHandler = createHandlerAction(this);
+      await this.api.listen(this.eventHandler);
+
+      this.logger.info(`Logged in as ${this.user?.username || this.user?.userID || 'Instagram user'}.`);
+      this.logger.info(`Loaded ${loaded.commands.size} commands. Use ${this.config.prefix}help in a chat.`);
+      this.started = true;
+      return this;
+    } catch (error) {
+      await this.clearSession(true);
+      throw error;
+    }
+  }
+
+  async waitForChatApi() {
+    if (!this.config.chatApi.url) {
+      const error = new Error('Chat API URL is missing. Set CHAT_API_URL.');
+      error.code = 'CONFIG_ERROR';
+      throw error;
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.chatApi.timeoutMs);
+    try {
+      const healthUrl = new URL('/healthz', `${this.config.chatApi.url}/`).toString();
+      const response = await fetch(healthUrl, { signal: controller.signal });
+      if (!response.ok) {
+        const error = new Error(`Chat API health check failed (${response.status}).`);
+        error.code = `HTTP_${response.status}`;
+        throw error;
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') error.code = 'CHAT_API_TIMEOUT';
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  bindApiEvents() {
+    this.api.on('connected', ({ method } = {}) => {
+      this.realtimeConnected = true;
+      this.logger.info(`Instagram realtime connected via ${method || 'MQTT'}.`);
+    });
+    this.api.on('disconnected', () => {
+      this.realtimeConnected = false;
+      this.logger.warn('Instagram realtime disconnected; waiting for the Chat API and re-authenticating automatically.');
+      this.scheduleSessionRecovery();
+    });
     this.api.on('reconnecting', () => this.logger.info('Instagram realtime reconnecting.'));
     this.api.on('reconnectPaused', ({ attempts } = {}) => {
-      this.logger.error(`Instagram realtime reconnect paused after ${attempts || 'multiple'} attempts. Restart after checking the network.`);
+      this.logger.warn(`Instagram realtime reconnect paused after ${attempts || 'multiple'} attempts; automatic recovery remains active.`);
+      this.scheduleSessionRecovery();
     });
     this.api.on('sessionExpired', () => {
       this.sessionExpired = true;
@@ -104,12 +171,63 @@ class InstagramBot {
       });
     });
     this.api.on('error', (error) => this.logger.error('Instagram API error:', error.message));
+  }
 
-    await this.api.listen(createHandlerAction(this));
+  scheduleSessionRecovery() {
+    if (this.stopping || this.recoveryTimer || this.recoveryPromise) return;
+    const delayMs = Math.max(1000, this.config.chatApi.reconnectDelayMs * 2);
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = null;
+      this.recoveryPromise = this.recoverSession()
+        .catch((error) => this.logger.error('Automatic Chat API recovery stopped:', error.message))
+        .finally(() => {
+          this.recoveryPromise = null;
+        });
+    }, delayMs);
+  }
 
-    this.logger.info(`Logged in as ${this.user?.username || this.user?.userID || 'Instagram user'}.`);
-    this.logger.info(`Loaded ${loaded.commands.size} commands. Use ${this.config.prefix}help in a chat.`);
-    this.started = true;
+  async recoverSession() {
+    await retryUntilReady({
+      operation: async () => {
+        if (this.stopping || this.realtimeConnected) return this;
+        await this.waitForChatApi();
+        this.api.resetSession?.();
+        await this.api.listen(this.eventHandler);
+        if (!this.realtimeConnected) throw new Error('Chat API realtime connection did not become ready.');
+        return this;
+      },
+      initialDelayMs: this.config.chatApi.retryDelayMs,
+      maxDelayMs: this.config.chatApi.maxRetryDelayMs,
+      shouldRetry: (error) => !this.stopping && !this.realtimeConnected && isRetryableStartupError(error),
+      onRetry: (error, { attempt, delayMs }) => {
+        this.logger.warn(`Automatic Chat API recovery is waiting (${error.message}). Retry ${attempt} in ${delayMs}ms.`);
+      },
+      sleep
+    });
+  }
+
+  async clearSession(unload = false) {
+    clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = null;
+    this.realtimeConnected = false;
+    this.closeCommandWatchers();
+    if (unload && this.router) await this.runCommandLifecycle('onUnload');
+    if (this.api) {
+      this.api.stopListening();
+      if (this.api.destroy) {
+        await this.api.destroy().catch((error) => {
+          this.logger.warn('Could not destroy Chat API client:', error.message);
+        });
+      }
+    }
+    if (global.NkxBot === this.globalRegistry) delete global.NkxBot;
+    if (global.InstaBot === this.globalRegistry) delete global.InstaBot;
+    this.api = null;
+    this.router = null;
+    this.user = null;
+    this.handlerEvents = null;
+    this.globalRegistry = null;
+    this.eventHandler = null;
   }
 
   installGlobalRegistry() {
@@ -275,6 +393,9 @@ class InstagramBot {
     if (this.stopPromise) return this.stopPromise;
     this.stopPromise = (async () => {
       this.stopping = true;
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
+      this.realtimeConnected = false;
       this.closeCommandWatchers();
       this.logger.info('Stopping bot...');
       if (this.api) {

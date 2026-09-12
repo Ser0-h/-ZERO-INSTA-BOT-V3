@@ -41,6 +41,22 @@ test('wraps both the low-level client and login facade without exposing private 
   assert.equal('_client' in api, false);
 });
 
+test('clears a stale remote session before automatic recovery', () => {
+  let stopped = 0;
+  const client = {
+    sessionId: 'stale-session',
+    authPromise: Promise.resolve(),
+    stopListening: () => { stopped += 1; }
+  };
+  const api = adaptClient(client);
+
+  api.resetSession();
+
+  assert.equal(stopped, 1);
+  assert.equal(client.sessionId, null);
+  assert.equal(client.authPromise, null);
+});
+
 test('normalizes broken decorative text before sending it', async () => {
   const sent = [];
   const api = adaptClient({

@@ -94,6 +94,11 @@ function adaptClient(client) {
     getHealth: () => client.getHealth(),
     saveSession: (filePath) => client.saveSession(filePath),
     stopTask: (name) => client.stopTask(name),
+    resetSession: () => {
+      client.stopListening?.();
+      if ('sessionId' in client) client.sessionId = null;
+      if ('authPromise' in client) client.authPromise = null;
+    },
     destroy,
     logout: () => client.logout()
   };

@@ -98,7 +98,9 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
       url: stringFromValue(process.env.CHAT_API_URL, stringFromValue(chatApi.url)),
       token: stringFromValue(process.env.CHAT_API_TOKEN, stringFromValue(chatApi.token)),
       timeoutMs: Math.max(1000, numberFromValue(process.env.CHAT_API_TIMEOUT_MS ?? chatApi.timeoutMs, 30000)),
-      reconnectDelayMs: Math.max(500, numberFromValue(process.env.CHAT_API_RECONNECT_DELAY_MS ?? chatApi.reconnectDelayMs, 3000))
+      reconnectDelayMs: Math.max(500, numberFromValue(process.env.CHAT_API_RECONNECT_DELAY_MS ?? chatApi.reconnectDelayMs, 3000)),
+      retryDelayMs: Math.max(1000, numberFromValue(process.env.CHAT_API_RETRY_DELAY_MS ?? chatApi.retryDelayMs, 5000)),
+      maxRetryDelayMs: Math.max(1000, numberFromValue(process.env.CHAT_API_MAX_RETRY_DELAY_MS ?? chatApi.maxRetryDelayMs, 60000))
     }
   };
 }
