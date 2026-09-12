@@ -75,7 +75,10 @@ Start the bot:
 ```bash
 npm start
 ```
-
+or
+```bash
+node nkx.js
+```
 The bot will keep the process alive while the Chat API is unavailable. It logs each retry and backs
 off from `CHAT_API_RETRY_DELAY_MS` up to `CHAT_API_MAX_RETRY_DELAY_MS`.
 
@@ -150,7 +153,6 @@ Created and maintained by **Saifullah Al Neoaz (NEOKEX)**.
 - GitHub: [@lazyneoaz](https://github.com/lazyneoaz)
 - Public bot: [InstaBot-V1](https://github.com/lazyneoaz/InstaBot-V1)
 - Chat client: [insta-chat-client](https://github.com/lazyneoaz/Insta-Chat-API-Client)
-- Private server: [Insta-Chat-API-Server](https://github.com/lazyneoaz/Insta-Chat-API-Server)
 
 This project uses the open-source `nkxica` Instagram client layer inside the private server. Please
 respect Instagram's terms, rate limits, and account-safety requirements.
