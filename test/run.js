@@ -591,6 +591,70 @@ async function main() {
 		}
 	});
 
+	/* ── anisearch ── */
+	await test("anisearch: registered with the Neoaz author", () => {
+		const command = registry.resolve("anisearch");
+		assert.ok(command, "anisearch should be registered");
+		assert.strictEqual(command.config.author, "Neoaz 🐊");
+		assert.strictEqual(command.config.category, "media");
+	});
+
+	await test("anisearch: missing query asks for usage", async () => {
+		const command = registry.resolve("anisearch");
+		const sent = [];
+		const message = { reply: form => { sent.push(form); return Promise.resolve({ messageID: "x" }); } };
+		await command.onStart({ args: [], message });
+		assert.ok(/usage/i.test(String(sent[0])), "expected a usage hint");
+	});
+
+	await test("anisearch: searches then sends the matched video", async () => {
+		const command = registry.resolve("anisearch");
+		const originalFetch = global.fetch;
+		const seen = [];
+		global.fetch = async (url, options) => {
+			seen.push(String(url));
+			if (String(url).includes("/tik-sr")) {
+				return { ok: true, status: 200, json: async () => ({ results: [{ url: "https://www.tiktok.com/@a/video/1" }] }) };
+			}
+			if (String(url).includes("/alldl")) {
+				return {
+					ok: true, status: 200,
+					json: async () => ({ metadata: { data: { title: "Naruto edit", downloads: [{ label: "MP4 (No Watermark)", ext: "mp4", url: "https://cdn.example/v.mp4" }] } } })
+				};
+			}
+			return { ok: true, status: 200, headers: { get: () => "1024" } };
+		};
+		let sent = null;
+		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		try {
+			await command.onStart({ args: ["naruto"], message });
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+		assert.ok(sent, "expected a reply");
+		assert.strictEqual(sent.body, "Naruto edit");
+		assert.strictEqual(sent.attachment.url, "https://cdn.example/v.mp4");
+		assert.strictEqual(sent.attachment.fileName, "anisearch.mp4", "mp4 extension hint must be attached");
+		assert.ok(seen.some(u => u.includes("/tik-sr?q=naruto")), "search endpoint hit");
+		assert.ok(seen.some(u => u.includes("/alldl?url=")), "download endpoint hit");
+	});
+
+	await test("anisearch: no matches reports an error", async () => {
+		const command = registry.resolve("anisearch");
+		const originalFetch = global.fetch;
+		global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ results: [] }) });
+		let sent = null;
+		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		try {
+			await command.onStart({ args: ["nothing"], message });
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+		assert.ok(/Could not find a video/.test(String(sent)), "expected an error reply");
+	});
+
 	/* ── summary ── */
 	const failed = results.filter(r => !r.ok);
 	for (const r of results)
