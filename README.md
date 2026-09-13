@@ -128,8 +128,10 @@ IG_API_TOKEN=<the same long secret you set as the server's IG_TOKEN>
 > intend to see a clear startup error. **Mode A (remote server) is the supported
 > deployment and needs no local package.**
 
-For local testing without a server, put Instagram cookies in `account.txt` and
-leave `server.url`/`server.token` empty. Cookie formats accepted:
+The bot ships with `account.txt` for pasting your Instagram cookies — open it,
+replace the placeholder line with your cookies, and save. Leave
+`server.url`/`server.token` empty in `config.json` to run in this direct mode.
+Cookie formats accepted:
 
 **JSON array**
 
@@ -149,8 +151,8 @@ sessionid=…; ds_user_id=…; csrftoken=…
 
 **Netscape file** — export from the *Cookie-Editor* browser extension.
 
-`sessionid` and `ds_user_id` are required. `account.txt` is git-ignored and ships empty.
-Do **not** commit real cookies.
+`sessionid` and `ds_user_id` are required. `account.txt` ships with the project
+and holds your cookies — keep it private and never push your real cookies.
 
 The bridge is `auth.js` at the project root. It is signature-compatible with the direct
 `ig-chat-api` login, so commands work identically: calls travel to the server over HTTP (RPC) and
@@ -431,7 +433,7 @@ InstaBOT/
 ├─ auth.js               remote ig-chat-api server bridge (token + url)
 ├─ Dockerfile            container image for Render / Railway
 ├─ config.json           bot settings (server.url + server.token live here)
-├─ account.txt           Instagram cookies (Mode B / local only, git-ignored)
+├─ account.txt           Instagram cookies — paste yours here (direct mode)
 ├─ assets/banner.svg     animated README banner
 ├─ src/
 │  ├─ bot.js             login · listener · reconnect
@@ -470,7 +472,8 @@ result. It uses `config.server.url` + `config.server.token` when set, otherwise 
 
 - `eval` and `shell` run arbitrary code on the host. They are **bot-admin only** and the bot admin
   list lives in `config.json` — keep it private. Prefer to disable or remove them for untrusted use.
-- Never commit real cookies. `account.txt` is git-ignored by default.
+- `account.txt` ships with a placeholder — paste your real cookies into it and keep it private.
+  Never commit or share your real cookies.
 - Never commit the server token. Keep it in the environment (`IG_API_TOKEN`), not in `config.json`.
 
 ---

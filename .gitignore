@@ -6,5 +6,4 @@ data/*.json
 data/*.jsonl
 *.log
 .DS_Store
-account.txt
 instabot-live-send.json
