@@ -64,15 +64,6 @@ npm start
 npm test
 ```
 
-> Node 18 or newer. **The bot needs the deployed server URL and token — not the
-> local `http://127.0.0.1:8787` one.** `config.json` ships with the local URL as a
-> development placeholder; replace it with your deployed URL before running.
->
-> Deploy the server first (see
-> [`ig-chat-api-server`](https://github.com/lazyneoaz/ig-chat-api-server)), which
-> prints its URL after deploy and takes `IG_TOKEN` + `IG_COOKIES` as environment
-> variables.
-
 ---
 
 ## Deploy to Render / Railway
@@ -194,9 +185,6 @@ The bridge is `auth.js` at the project root. It is signature-compatible with the
 realtime events arrive over Server-Sent Events (SSE). Media (path, Buffer, stream or URL) is read
 locally and streamed to the server as bytes.
 
-> The server URL and token are the deployed ones, never `http://127.0.0.1:8787`. The local URL in
-> `config.json` is only a placeholder for developing the server on the same machine.
-
 ---
 
 ## Configuration
@@ -240,6 +228,22 @@ Other environment variables:
 | `IG_API_SERVER` / `IG_API_TOKEN` / `IG_BOT_ID` | Server URL, token, and which account this bot owns (see above) |
 | `IG_COOKIES` | Instagram cookies to send to the server (wins over `account.txt`). Accepts a header string, JSON array, or Netscape text |
 | `IG_MAX_MEDIA_BYTES` | Largest local media file the bot will upload, in bytes (default 5 MB). Base64 adds ~33%, so keep it under the server's `IG_MAX_BODY_BYTES` (default 8 MB) |
+| `PORT` | Port for the built-in status server (default `8080`). Set `PORT=0` to disable it (pure worker mode) |
+
+### Status server
+
+The bot ships a tiny HTTP server so a host such as Render finds an open port
+(otherwise it reports *"No open ports detected"*). It also gives you a health
+check:
+
+```bash
+curl "http://<host>:<PORT>/health"
+# {"ok":true,"service":"instabot","online":true,"userID":"...","commands":21,"events":4}
+```
+
+The bot itself only makes outbound connections; this server is stateless and does
+nothing but answer that request. Set `PORT=0` to turn it off when running as a
+background worker that does not need a port.
 
 
 ### Music server

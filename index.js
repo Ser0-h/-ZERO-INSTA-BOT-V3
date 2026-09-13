@@ -16,6 +16,7 @@
 const log = require("./src/logger");
 const { loadConfig } = require("./src/config");
 const { createBot } = require("./src/bot");
+const { createStatusServer } = require("./src/statusServer");
 
 const BANNER = [
 	" ___           _        ____   ___ _____",
@@ -48,8 +49,23 @@ async function main() {
 
 	const bot = createBot(config);
 
+	// A host like Render scans for an open port and marks a service that binds
+	// none as unhealthy. This tiny server satisfies that check and serves
+	// /health. Set PORT=0 to disable it (pure worker mode).
+	const statusServer = createStatusServer({
+		info: () => ({
+			bot: config.botName,
+			botId: config.server && config.server.botId ? config.server.botId : "default",
+			online: bot.state.running === true,
+			userID: bot.state.botID || null,
+			commands: bot.state.commandCount,
+			events: bot.state.eventCount
+		})
+	});
+
 	const shutdown = async (signal) => {
 		log.warn("SYSTEM", `Received ${signal}; shutting down…`);
+		await statusServer.stop();
 		await bot.stop();
 		process.exit(0);
 	};
@@ -58,6 +74,13 @@ async function main() {
 
 	process.on("unhandledRejection", (reason) => log.error("PROCESS", "Unhandled promise rejection", reason));
 	process.on("uncaughtException", (error) => log.error("PROCESS", "Uncaught exception", error));
+
+	try {
+		await statusServer.start();
+	}
+	catch (error) {
+		log.error("HTTP", "Could not start the status server", error);
+	}
 
 	try {
 		await bot.start();

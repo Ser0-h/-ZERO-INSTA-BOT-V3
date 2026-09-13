@@ -818,6 +818,39 @@ async function main() {
 		assert.strictEqual(reg.events.length, firstEvents, "events must not duplicate on reload");
 	});
 
+	await test("status server: serves /health on the given port and stops", async () => {
+		const { createStatusServer } = require(path.join(root, "src/statusServer"));
+		const http = require("http");
+
+		// PORT=0 disables it (pure worker mode).
+		assert.strictEqual(createStatusServer({ port: 0 }).enabled, false);
+
+		// Grab a free ephemeral port, release it, then bind our server there.
+		const probe = http.createServer();
+		await new Promise(r => probe.listen(0, "127.0.0.1", r));
+		const port = probe.address().port;
+		await new Promise(r => probe.close(r));
+
+		const live = createStatusServer({ port, host: "127.0.0.1", info: () => ({ online: true, botId: "botA" }) });
+		await live.start();
+		try {
+			const res = await new Promise((resolve, reject) => {
+				http.get({ host: "127.0.0.1", port, path: "/health" }, r => {
+					let b = "";
+					r.on("data", d => { b += d; });
+					r.on("end", () => resolve({ status: r.statusCode, body: b }));
+				}).on("error", reject);
+			});
+			assert.strictEqual(res.status, 200);
+			const parsed = JSON.parse(res.body);
+			assert.strictEqual(parsed.ok, true);
+			assert.strictEqual(parsed.service, "instabot");
+			assert.strictEqual(parsed.online, true);
+			assert.strictEqual(parsed.botId, "botA");
+		}
+		finally { await live.stop(); }
+	});
+
 	/* ── summary ── */
 	const failed = results.filter(r => !r.ok);
 	for (const r of results)
