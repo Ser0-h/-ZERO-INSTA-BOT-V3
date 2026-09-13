@@ -11,7 +11,11 @@ events, roles, cooldowns and pluggable custom commands.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-3ddc84)
-![Tests](https://img.shields.io/badge/tests-45%20passing-3ddc84)
+![Tests](https://img.shields.io/badge/tests-53%20passing-3ddc84)
+
+[![View](https://img.shields.io/badge/View-InstaBot--V1-2ea44f?logo=github)](https://github.com/lazyneoaz/InstaBot-V1)
+[![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github)](https://github.com/lazyneoaz/InstaBot-V1/fork)
+[![Star](https://img.shields.io/github/stars/lazyneoaz/InstaBot-V1?label=Star&logo=github&color=ffd33d)](https://github.com/lazyneoaz/InstaBot-V1/stargazers)
 
 </div>
 
@@ -496,3 +500,15 @@ result. It uses `config.server.url` + `config.server.token` when set, otherwise 
 ## License
 
 MIT © [Saifullah Al Neoaz](https://github.com/lazyneoaz)
+
+---
+
+<div align="center">
+
+[![View](https://img.shields.io/badge/View-InstaBot--V1-2ea44f?logo=github&style=for-the-badge)](https://github.com/lazyneoaz/InstaBot-V1)
+[![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github&style=for-the-badge)](https://github.com/lazyneoaz/InstaBot-V1/fork)
+[![Star](https://img.shields.io/github/stars/lazyneoaz/InstaBot-V1?label=Star&logo=github&color=ffd33d&style=for-the-badge)](https://github.com/lazyneoaz/InstaBot-V1/stargazers)
+
+[![MIT License](https://img.shields.io/badge/license-MIT-c13584?style=for-the-badge)](LICENSE)
+
+</div>
