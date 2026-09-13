@@ -69,7 +69,7 @@ npm test
 > development placeholder; replace it with your deployed URL before running.
 >
 > Deploy the server first (see
-> [`ig-chat-api-server`](https://github.com/lazyneoaz/ig-chat-api-server)), which
+> [`ig-chat-api-server`](https://nkx-ica.neokex.xyz)), which
 > prints its URL after deploy and takes `IG_TOKEN` + `IG_COOKIES` as environment
 > variables.
 
