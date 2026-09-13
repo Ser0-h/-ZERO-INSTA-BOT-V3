@@ -228,6 +228,22 @@ Other environment variables:
 | `IG_API_SERVER` / `IG_API_TOKEN` / `IG_BOT_ID` | Server URL, token, and which account this bot owns (see above) |
 | `IG_COOKIES` | Instagram cookies to send to the server (wins over `account.txt`). Accepts a header string, JSON array, or Netscape text |
 | `IG_MAX_MEDIA_BYTES` | Largest local media file the bot will upload, in bytes (default 5 MB). Base64 adds ~33%, so keep it under the server's `IG_MAX_BODY_BYTES` (default 8 MB) |
+| `PORT` | Port for the built-in status server (default `8080`). Set `PORT=0` to disable it (pure worker mode) |
+
+### Status server
+
+The bot ships a tiny HTTP server so a host such as Render finds an open port
+(otherwise it reports *"No open ports detected"*). It also gives you a health
+check:
+
+```bash
+curl "http://<host>:<PORT>/health"
+# {"ok":true,"service":"instabot","online":true,"userID":"...","commands":21,"events":4}
+```
+
+The bot itself only makes outbound connections; this server is stateless and does
+nothing but answer that request. Set `PORT=0` to turn it off when running as a
+background worker that does not need a port.
 
 
 ### Music server
