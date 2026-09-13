@@ -90,6 +90,34 @@ test('keeps reaction removal and toggle methods available', async () => {
   ]);
 });
 
+test('retries a media send without the reply anchor when Instagram rejects it', async () => {
+  const calls = [];
+  const api = adaptClient({
+    sendPhotoFromUrl: async (...args) => {
+      calls.push(args);
+      if (args[2]?.replyTo) throw Object.assign(new Error('field_exception'), { code: 'UPSTREAM_ERROR' });
+      return { messageID: 'sent' };
+    }
+  });
+
+  const result = await api.sendPhotoFromUrl('thread-1', 'https://cdn.example/p.jpg', { replyTo: 'mid-9' });
+  assert.deepEqual(result, { messageID: 'sent' });
+  assert.deepEqual(calls, [
+    ['thread-1', 'https://cdn.example/p.jpg', { replyTo: 'mid-9' }],
+    ['thread-1', 'https://cdn.example/p.jpg', { replyTo: undefined }]
+  ]);
+});
+
+test('does not retry a media send that failed without a reply anchor', async () => {
+  let attempts = 0;
+  const api = adaptClient({
+    sendGIF: async () => { attempts += 1; throw new Error('boom'); }
+  });
+
+  await assert.rejects(() => api.sendGIF('thread-1', 'https://cdn.example/a.gif'), /boom/);
+  assert.equal(attempts, 1);
+});
+
 test('forwards message effect methods with normalized thread IDs', async () => {
   const calls = [];
   const api = adaptClient({

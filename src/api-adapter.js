@@ -33,6 +33,31 @@ function normalizeOutgoingMessage(message) {
   return normalized;
 }
 
+// Goatbot-style commands call `api.sendMessage(message, threadID, callback, replyTo)`
+// and register a follow-up handler on `info.messageID`: the callback must run with
+// the sent message's info or `global.GoatBot.onReply.set(...)` never happens and the
+// bot quietly ignores the user's reply. This keeps that contract while still
+// returning a promise so `await api.sendMessage(...)` works too.
+function sendGoatbotMessage(sendMessage, client, message, threadID, callback, replyTo) {
+  const run = () => {
+    if (replyTo && typeof client.replyToMessage === 'function') {
+      return client.replyToMessage(threadID, message, replyTo);
+    }
+    if (replyTo && typeof client.call === 'function') {
+      return client.call('replyToMessage', [threadID, message, replyTo]);
+    }
+    return sendMessage(message, threadID);
+  };
+  const promise = Promise.resolve().then(run);
+  if (typeof callback === 'function') {
+    promise.then(
+      (info) => { try { callback(null, info); } catch (error) { setImmediate(() => { throw error; }); } },
+      (error) => { try { callback(error); } catch (nested) { setImmediate(() => { throw nested; }); } }
+    );
+  }
+  return promise;
+}
+
 // The vendored client exposes both a rich facade and a lower-level client.
 // This adapter keeps session restoration and cookie login interchangeable.
 function adaptClient(client) {
@@ -59,6 +84,30 @@ function adaptClient(client) {
     return Promise.reject(error);
   };
 
+  // Instagram can reject a `replyTo` that points at a message it will not quote
+  // (very old, from another surface, or already gone) with a generic provider
+  // error. A media send should still deliver, so retry once without the anchor.
+  const replySafeMediaSend = (name, buildArgs) => async (...input) => {
+    const args = buildArgs(...input);
+    const optionsIndex = args.length - 1;
+    const options = args[optionsIndex];
+    const hasReplyAnchor = options && typeof options === 'object' && options.replyTo;
+    const run = (callArgs) => {
+      if (typeof client[name] === 'function') return client[name](...callArgs);
+      if (supportsCall) return client.call(name, callArgs);
+      const error = new Error(`This chat client does not support "${name}". Update @lazyneoaz/insta-chat-client.`);
+      error.code = 'UNSUPPORTED_OPERATION';
+      throw error;
+    };
+    try {
+      return await run(args);
+    } catch (error) {
+      if (!hasReplyAnchor || error?.code === 'UNSUPPORTED_OPERATION') throw error;
+      const retryArgs = [...args.slice(0, optionsIndex), { ...options, replyTo: undefined }];
+      return run(retryArgs);
+    }
+  };
+
   return {
     getCurrentUserID: () => client.getCurrentUserID(),
     listen: (callback) => client.listen(callback),
@@ -66,7 +115,14 @@ function adaptClient(client) {
     on: (...args) => client.on(...args),
     off: (...args) => client.off(...args),
     once: (...args) => client.once(...args),
-    sendMessage: (message, threadID) => sendMessage(normalizeOutgoingMessage(message), threadID),
+    sendMessage: (message, threadID, callback, replyTo) => sendGoatbotMessage(
+      sendMessage,
+      client,
+      normalizeOutgoingMessage(message),
+      threadID,
+      callback,
+      replyTo
+    ),
     sendMessageBatch: delegate('sendMessageBatch', (threadIDs, message) => [threadIDs, normalizeOutgoingMessage(message)]),
     sendEffects: delegate('sendEffects', (threadID, text, effect) => [
       String(threadID),
@@ -74,9 +130,9 @@ function adaptClient(client) {
       effect
     ]),
     listEffects: delegate('listEffects', () => []),
-    sendPhotoFromUrl: delegate('sendPhotoFromUrl', (threadID, imageUrl, options) => [threadID, imageUrl, options]),
-    sendVoiceFromUrl: delegate('sendVoiceFromUrl', (threadID, audioUrl, options) => [threadID, audioUrl, options]),
-    sendGIF: delegate('sendGIF', (threadID, gifUrl, options) => [threadID, gifUrl, options]),
+    sendPhotoFromUrl: replySafeMediaSend('sendPhotoFromUrl', (threadID, imageUrl, options) => [threadID, imageUrl, options]),
+    sendVoiceFromUrl: replySafeMediaSend('sendVoiceFromUrl', (threadID, audioUrl, options) => [threadID, audioUrl, options]),
+    sendGIF: replySafeMediaSend('sendGIF', (threadID, gifUrl, options) => [threadID, gifUrl, options]),
     sendDirectMessage: delegate('sendDirectMessage', (userID, message) => [userID, normalizeOutgoingMessage(message)]),
     replyToMessage: delegate('replyToMessage', (threadID, message, messageID) => [threadID, normalizeOutgoingMessage(message), messageID]),
     unsendMessage: delegate('unsendMessage', (messageID, threadID) => [messageID, threadID]),
@@ -115,7 +171,6 @@ function adaptClient(client) {
     getProfilePicture: delegate('getProfilePicture', (userID) => [userID]),
     getUserInfoByUsername: delegate('getUserInfoByUsername', (username) => [username]),
     getProfilePictureByUsername: delegate('getProfilePictureByUsername', (username) => [username]),
-    setProfilePicture: delegate('setProfilePicture', (imageUrl) => [imageUrl]),
     searchUsers: delegate('searchUsers', (query, options) => [query, options]),
     getMultipleUserInfo: delegate('getMultipleUserInfo', (userIDs) => [userIDs]),
     getFollowers: delegate('getFollowers', (userID, options) => [userID, options]),
@@ -151,4 +206,4 @@ function adaptClient(client) {
   };
 }
 
-module.exports = { adaptClient };
+module.exports = { adaptClient, sendGoatbotMessage };

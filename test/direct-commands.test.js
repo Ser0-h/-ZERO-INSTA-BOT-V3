@@ -9,7 +9,6 @@ const cmdCommand = require('../scripts/cmds/cmd');
 const uptimeCommand = require('../scripts/cmds/uptime');
 const pfpCommand = require('../scripts/cmds/pfp');
 const changeNameCommand = require('../scripts/cmds/changename');
-const setProfileCommand = require('../scripts/cmds/setprofile');
 
 test('effect command sends the selected effect and reports success', async () => {
   const calls = [];
@@ -147,29 +146,3 @@ test('changename updates the current group title', async () => {
   assert.deepEqual(replies, ['Group name changed to "Nerds United".']);
 });
 
-test('setprofile updates the bot profile from a URL or a replied image', async () => {
-  const calls = [];
-  const replies = [];
-  const api = {
-    setProfilePicture: async (url) => { calls.push(url); return { success: true }; },
-    getMessagesAround: async () => [{ messageID: 'image-1', attachments: [{ type: 'photo', url: 'https://cdn.example/reply.jpg' }] }]
-  };
-
-  await setProfileCommand.onStart({
-    api,
-    args: ['https://cdn.example/url.jpg'],
-    event: { messageID: 'command-1' },
-    message: { reply: async (text) => replies.push(text) },
-    threadID: 'thread-1'
-  });
-  await setProfileCommand.onStart({
-    api,
-    args: [],
-    event: { replyTo: 'image-1', messageID: 'command-2' },
-    message: { reply: async (text) => replies.push(text) },
-    threadID: 'thread-1'
-  });
-
-  assert.deepEqual(calls, ['https://cdn.example/url.jpg', 'https://cdn.example/reply.jpg']);
-  assert.deepEqual(replies, ['Profile picture updated.', 'Profile picture updated.']);
-});

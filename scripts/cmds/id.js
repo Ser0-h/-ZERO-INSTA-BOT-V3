@@ -49,7 +49,7 @@ async function resolveReplyUser(api, event, threadID) {
   if (userID && !username && typeof api.getUserInfo === 'function') {
     try {
       const user = await api.getUserInfo(userID);
-      username = getUsername(user) || getUserID(user) && user.username;
+      username = getUsername(user) || null;
     } catch (_) {
       // The ID is still useful even when profile lookup fails.
     }

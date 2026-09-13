@@ -153,3 +153,73 @@ test('expired reply entries are pruned and ignored', async () => {
   assert.equal(invoked, false);
   assert.equal(router.replyHandlers.has('BOTMSG4'), false);
 });
+
+test('a reply event typed message_reply (Goatbot style) still dispatches onReply', async () => {
+  let seen = null;
+  const command = {
+    config: { name: 'quiz2' },
+    onStart() {},
+    async onReply({ event }) {
+      if (event.type === 'message_reply') seen = event.body;
+    }
+  };
+  const router = makeRouter(new Map([['quiz2', command]]));
+  router.replyHandlers.set('BOTMSG5', { commandName: 'quiz2', messageID: 'BOTMSG5', author: 'u1' });
+
+  const handled = await router.handle({
+    type: 'message_reply', threadID: 't1', senderID: 'u1', messageID: 'm2', body: 'answer', replyTo: 'BOTMSG5'
+  });
+
+  assert.equal(handled, true);
+  assert.equal(seen, 'answer');
+});
+
+test('Goatbot sendMessage(message, threadID, callback, replyTo) registers onReply via the callback', async () => {
+  const { sendGoatbotMessage } = require('../src/api-adapter');
+  const calls = [];
+  const client = {
+    async sendMessage(message, threadID) {
+      calls.push(['sendMessage', message, threadID]);
+      return { messageID: 'BOTMSG6', threadID };
+    },
+    async replyToMessage(threadID, message, replyTo) {
+      calls.push(['replyToMessage', threadID, message, replyTo]);
+      return { messageID: 'BOTMSG6', threadID, replyTo };
+    }
+  };
+  const sendMessage = (message, threadID) => client.sendMessage(message, threadID);
+
+  let info = null;
+  const promise = sendGoatbotMessage(sendMessage, client, 'hello', 't1', (error, sent) => {
+    if (error) throw error;
+    info = sent;
+  }, 'ANCHOR');
+
+  const returned = await promise;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(returned.messageID, 'BOTMSG6');
+  assert.equal(info.messageID, 'BOTMSG6');
+  // A replyTo anchor must route through replyToMessage, not a plain send.
+  assert.deepEqual(calls, [['replyToMessage', 't1', 'hello', 'ANCHOR']]);
+
+  // Without a reply anchor it is a plain send.
+  calls.length = 0;
+  await sendGoatbotMessage(sendMessage, client, 'plain', 't1', () => {}, undefined);
+  assert.deepEqual(calls, [['sendMessage', 'plain', 't1']]);
+});
+
+test('sendGoatbotMessage reports send failures to the callback without throwing', async () => {
+  const { sendGoatbotMessage } = require('../src/api-adapter');
+  const boom = new Error('nope');
+  const client = { async sendMessage() { throw boom; } };
+  const sendMessage = (message, threadID) => client.sendMessage(message, threadID);
+
+  let reported = null;
+  await assert.rejects(
+    sendGoatbotMessage(sendMessage, client, 'x', 't1', (error) => { reported = error; }),
+    boom
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(reported, boom);
+});
+

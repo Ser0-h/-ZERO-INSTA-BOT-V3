@@ -47,7 +47,6 @@ function createGlobalFunctions({ api, config, store, logger, language, getComman
     getProfilePicture: (userID) => api.getProfilePicture(String(userID)),
     getUserInfoByUsername: (username) => api.getUserInfoByUsername(username),
     getProfilePictureByUsername: (username) => api.getProfilePictureByUsername(username),
-    setProfilePicture: (imageUrl) => api.setProfilePicture(imageUrl),
     searchUsers: (query, options) => api.searchUsers(query, options),
     searchThreads: (query, options) => api.searchThreads(query, options),
     getHealth: () => api.getHealth(),
@@ -79,7 +78,6 @@ function createContextFunctions({ api, config, store, router, logger, language, 
     getProfilePicture: (userID = event.senderID) => api.getProfilePicture(String(userID)),
     getUserInfoByUsername: (username) => api.getUserInfoByUsername(username),
     getProfilePictureByUsername: (username) => api.getProfilePictureByUsername(username),
-    setProfilePicture: (imageUrl) => api.setProfilePicture(imageUrl),
     searchUsers: (query, options) => api.searchUsers(query, options),
     searchThreads: (query, options) => api.searchThreads(query, options),
     sendTypingIndicator: () => api.sendTypingIndicator(threadID),
@@ -261,7 +259,9 @@ class CommandRouter {
     await this.runHooks('onAnyEvent', event, [], { silent: true });
     if (event.type === 'message_reaction') return this.handleReaction(event);
     if (event.type === 'event') return this.handleEvent(event);
-    if (event.type !== 'message') return false;
+    // Goatbot surfaces a reply as `message_reply`; Instagram itself sends a plain
+    // `message` with a reply anchor. Accept both so reply handlers still dispatch.
+    if (event.type !== 'message' && event.type !== 'message_reply') return false;
 
     const body = cleanText(event.body, 5000);
     if (!body) return false;
@@ -579,6 +579,8 @@ class CommandRouter {
             result = await this.api.replyToMessage(threadID, content, event.messageID);
             replied = true;
           } catch (error) {
+            // A reply anchor Instagram won't accept must not swallow the reply:
+            // fall through and send it as a normal message instead.
             this.logger.warn(`Reply request failed for ${event.messageID}; sending normally:`, error.message);
           }
         }

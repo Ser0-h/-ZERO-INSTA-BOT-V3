@@ -97,7 +97,6 @@ chat.api.toke.neokex.ica.token.can.change.a9y.2ime.ok
 | `changename` | Group admins | `!changename <new name>` |
 | `welcome` | Group admins | `!welcome on\|off` |
 | `leave` | Group admins | `!leave on\|off` |
-| `setprofile` | Owner | `!setprofile <public image URL>` or reply to an image |
 | `eval` | Owner | `!eval <JavaScript>` |
 | `shell` | Owner | `!shell <command>` |
 | `cmd` | Owner | `!cmd <action>` |
