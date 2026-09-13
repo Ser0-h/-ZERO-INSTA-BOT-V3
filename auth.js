@@ -263,18 +263,39 @@ class EventStream {
 		this.maxRetry = 60000;
 		this.attempts = 0;
 		this.timer = null;
+		this.lastChunkAt = 0;
+		this.stallTimer = null;
 	}
 
-	start() { this._connect(); }
+	start() { this._connect(); this._armStallWatch(); }
 
 	stop() {
 		this.stopped = true;
 		if (this.timer) clearTimeout(this.timer);
+		if (this.stallTimer) clearInterval(this.stallTimer);
+		this.stallTimer = null;
 		if (this.req) {
 			try { this.req.destroy(); }
 			catch (_) { /* ignore */ }
 			this.req = null;
 		}
+	}
+
+	// The server sends a `: ping` comment every ~25s. If nothing at all arrives
+	// for much longer the stream is silently dead (common through proxies), so
+	// drop it and reconnect.
+	_armStallWatch() {
+		if (this.stallTimer) return;
+		const limit = 90000;
+		this.stallTimer = setInterval(() => {
+			if (this.stopped || !this.req) return;
+			if (this.lastChunkAt && Date.now() - this.lastChunkAt > limit) {
+				try { this.req.destroy(); } catch (_) { /* ignore */ }
+				this.req = null;
+				this._scheduleReconnect();
+			}
+		}, 15000);
+		if (this.stallTimer.unref) this.stallTimer.unref();
 	}
 
 	_connect() {
@@ -305,7 +326,7 @@ class EventStream {
 			this.attempts = 0;
 			this.retry = this.baseRetry;
 			res.setEncoding("utf8");
-			res.on("data", chunk => this._onData(chunk));
+			res.on("data", chunk => { this.lastChunkAt = Date.now(); this._onData(chunk); });
 			res.on("end", () => this._scheduleReconnect());
 			res.on("error", error => { if (!this.stopped) this.callback(error); this._scheduleReconnect(); });
 		});
