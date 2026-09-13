@@ -204,6 +204,14 @@ INSTABOT_URL=…     # or URL
 
 Values in `config.json` take precedence.
 
+Other environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `IG_API_SERVER` / `IG_API_TOKEN` / `IG_BOT_ID` | Server URL, token, and which account this bot owns (see above) |
+| `IG_MAX_MEDIA_BYTES` | Largest local media file the bot will upload, in bytes (default 5 MB). Base64 adds ~33%, so keep it under the server's `IG_MAX_BODY_BYTES` (default 8 MB) |
+
+
 ### Music server
 
 Set `music.apiUrl` to your own search endpoint. `{query}` is replaced with the song text, otherwise

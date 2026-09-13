@@ -631,6 +631,31 @@ async function main() {
 		}
 	});
 
+	await test("auth: rejects media above the size cap before sending", async () => {
+		const auth = require(path.join(root, "auth"));
+		const http = require("http");
+		let hits = 0;
+		const server = http.createServer((req, res) => {
+			hits++;
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ ok: true, result: "123" }));
+		});
+		await new Promise(r => server.listen(0, "127.0.0.1", r));
+		const port = server.address().port;
+		try {
+			const api = await auth({ server: "http://127.0.0.1:" + port, token: "t", botId: "botA" });
+			hits = 0;
+			const big = Buffer.alloc(6 * 1024 * 1024);
+			await assert.rejects(
+				() => api.sendVideo(big, "1"),
+				/MB limit/,
+				"oversized media must be rejected locally"
+			);
+			assert.strictEqual(hits, 0, "no request should reach the server for oversized media");
+		}
+		finally { server.close(); }
+	});
+
 	await test("config: server.botId defaults to 'default'", () => {
 		const { loadConfig } = require(path.join(root, "src/config"));
 		const config = loadConfig();

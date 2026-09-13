@@ -58,7 +58,10 @@ const METHODS = [
 	"getAppState", "setOptions", "logout"
 ];
 
-const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
+// Raw media is base64-encoded (+33%) and wrapped in JSON, so keep it well under
+// the server's request cap (IG_MAX_BODY_BYTES, default 8 MB). Override with
+// IG_MAX_MEDIA_BYTES on the bot if the server allows larger bodies.
+const MAX_MEDIA_BYTES = Math.max(256 * 1024, Number(process.env.IG_MAX_MEDIA_BYTES) || 5 * 1024 * 1024);
 
 /* ── media encoding ────────────────────────────────────────────────────── */
 
@@ -68,7 +71,8 @@ function isReadable(value) {
 }
 
 function encodeBuffer(buffer, filename, contentType) {
-	if (buffer.length > MAX_MEDIA_BYTES) throw new Error("Media exceeds the 64 MB limit");
+	if (buffer.length > MAX_MEDIA_BYTES)
+		throw new Error(`Media is ${Math.round(buffer.length / 1048576)} MB, above the ${Math.round(MAX_MEDIA_BYTES / 1048576)} MB limit`);
 	return { __type: "buffer", base64: buffer.toString("base64"), filename: filename || null, contentType: contentType || null };
 }
 
