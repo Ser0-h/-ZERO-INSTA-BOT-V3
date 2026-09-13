@@ -12,8 +12,8 @@
 		"notes": "Optional. `token` and `url` are read from the environment when left blank (INSTABOT_TOKEN / INSTABOT_URL or TOKEN / URL). Use them for a custom music server or any external API your commands call."
 	},
 	"server": {
-		"url": "http://127.0.0.1:8787",
-		"token": "",
+		"url": "https://nkx-ica.neokex.xyz/",
+		"token": "chat.api.toke.neokex.ica.token.can.change.a9y.2ime.ok",
 		"botId": "default",
 		"timeout": 60000,
 		"notes": "REQUIRED for the deployed bot. Set `url` to your deployed ig-chat-api-server URL (https://<your-server-host>, NOT http://127.0.0.1:8787) and `token` to the server's IG_TOKEN. `botId` selects which account this bot owns on a multi-bot server: the server loads that bot's Instagram session from accounts/<botId>.txt (or the IG_ACCOUNTS map). Use \"default\" for a single-bot server. Empty url/token means read from the environment: IG_API_SERVER / IG_API_TOKEN / IG_BOT_ID."
