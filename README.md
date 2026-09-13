@@ -64,15 +64,6 @@ npm start
 npm test
 ```
 
-> Node 18 or newer. **The bot needs the deployed server URL and token — not the
-> local `http://127.0.0.1:8787` one.** `config.json` ships with the local URL as a
-> development placeholder; replace it with your deployed URL before running.
->
-> Deploy the server first (see
-> [`ig-chat-api-server`](https://github.com/lazyneoaz/ig-chat-api-server)), which
-> prints its URL after deploy and takes `IG_TOKEN` + `IG_COOKIES` as environment
-> variables.
-
 ---
 
 ## Deploy to Render / Railway
@@ -193,9 +184,6 @@ The bridge is `auth.js` at the project root. It is signature-compatible with the
 `ig-chat-api` login, so commands work identically: calls travel to the server over HTTP (RPC) and
 realtime events arrive over Server-Sent Events (SSE). Media (path, Buffer, stream or URL) is read
 locally and streamed to the server as bytes.
-
-> The server URL and token are the deployed ones, never `http://127.0.0.1:8787`. The local URL in
-> `config.json` is only a placeholder for developing the server on the same machine.
 
 ---
 
