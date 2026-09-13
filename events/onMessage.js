@@ -1,0 +1,23 @@
+"use strict";
+
+/**
+ * onMessage — runs for every incoming message event.
+ * Records activity and keeps basic thread metadata fresh.
+ * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
+ */
+
+module.exports = {
+	config: {
+		name: "onMessage",
+		category: "system",
+		eventType: "message"
+	},
+
+	onEvent: async function ({ event, threadsData }) {
+		const patch = { lastActivity: Date.now() };
+		if (event.isGroup != null) patch.isGroup = event.isGroup;
+		if (Array.isArray(event.participantIDs) && event.participantIDs.length)
+			patch.members = event.participantIDs.map(String);
+		threadsData.update(event.threadID, patch);
+	}
+};

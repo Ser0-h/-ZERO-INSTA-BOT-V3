@@ -1,0 +1,161 @@
+"use strict";
+
+/**
+ * Message context handed to every command.
+ * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
+ */
+
+const utils = require("./utils");
+
+/**
+ * Build the message helper for an event. It exposes:
+ *   message.send(form)          send to the thread
+ *   message.reply(form)         reply to the triggering message
+ *   message.unsend(id?)         remove a message for everyone
+ *   message.react(emoji, id?)   react to a message
+ *   message.effect(text, style) animated text effect
+ *   message.typing()            typing indicator (returns a stop fn)
+ *
+ * `form` may be a string, or `{ body, attachment, url, effect, avatarEffect }`.
+ * Media attachments are routed to sendImage / sendAudio / sendVideo based on
+ * their type, and each media source may be a URL, path, Buffer or stream.
+ */
+function createMessageContext({ api, event, log }) {
+	const threadID = event.threadID;
+	const eventMessageID = event.messageID;
+
+	function sendPlain(form, replyTarget) {
+		const body = typeof form === "string" ? form : (form && form.body != null ? String(form.body) : "");
+		const payload = { body };
+		if (form && typeof form === "object") {
+			if (form.url) payload.url = form.url;
+			if (form.effect != null) payload.effect = form.effect;
+			if (form.avatarEffect != null) payload.avatarEffect = form.avatarEffect;
+		}
+		return new Promise((resolve, reject) => {
+			api.sendMessage(payload, threadID, (error, result) => error ? reject(error) : resolve(result), replyTarget);
+		});
+	}
+
+	function sendWithMedia(form, replyTarget) {
+		const sources = (Array.isArray(form.attachment) ? form.attachment : [form.attachment]).filter(Boolean);
+		if (!sources.length) return sendPlain(form, replyTarget);
+
+		return new Promise((resolve, reject) => {
+			let index = 0;
+			let firstResult = null;
+			const sendNext = () => {
+				if (index >= sources.length) return resolve(firstResult);
+				const current = index++;
+				const raw = sources[current];
+				const kind = utils.mediaKind(raw);
+				const source = utils.toSource(raw);
+				const caption = current === 0 && form.body != null ? String(form.body) : "";
+				const done = (error, result) => {
+					if (error) return reject(error);
+					if (current === 0) firstResult = result;
+					sendNext();
+				};
+				try {
+					if (kind === "video") return api.sendVideo(source, threadID, done);
+					if (kind === "audio") return api.sendAudio(source, threadID, done);
+					return api.sendImage(source, threadID, caption, done, current === 0 ? replyTarget : undefined);
+				}
+				catch (error) {
+					return reject(error);
+				}
+			};
+			sendNext();
+		});
+	}
+
+	function dispatch(form, replyTarget) {
+		if (form == null) return Promise.reject(new Error("Nothing to send"));
+		if (typeof form === "object" && !Array.isArray(form) && form.attachment != null)
+			return sendWithMedia(form, replyTarget);
+		return sendPlain(form, replyTarget);
+	}
+
+	const context = {
+		threadID,
+		event,
+
+		/** Send to the thread. Accepts an optional node-style callback. */
+		send(form, callback) {
+			if (typeof callback === "function")
+				return dispatch(form, undefined).then(r => callback(null, r), e => callback(e));
+			return dispatch(form, undefined);
+		},
+
+		/** Reply to the message that triggered this command. */
+		reply(form, callback) {
+			if (typeof callback === "function")
+				return dispatch(form, eventMessageID).then(r => callback(null, r), e => callback(e));
+			return dispatch(form, eventMessageID);
+		},
+
+		/** Remove a message for everyone (defaults to the triggering message). */
+		unsend(messageID = eventMessageID, callback) {
+			if (typeof callback === "function")
+				return api.unsendMessage(messageID, threadID, callback);
+			return new Promise((resolve, reject) => {
+				api.unsendMessage(messageID, threadID, (error, result) => error ? reject(error) : resolve(result));
+			});
+		},
+
+		/** React to a message ("" removes the reaction). */
+		react(emoji, messageID = eventMessageID, callback) {
+			const reaction = emoji == null ? "" : emoji;
+			if (typeof callback === "function")
+				return api.setMessageReaction(reaction, messageID, threadID, callback);
+			return new Promise((resolve, reject) => {
+				api.setMessageReaction(reaction, messageID, threadID, (error, result) => error ? reject(error) : resolve(result));
+			});
+		},
+
+		/** Animated text effect ("love", "gift", "celebration", "fire"). */
+		effect(text, effect, callback) {
+			if (typeof callback === "function")
+				return api.sendTextEffect(text, threadID, effect, callback);
+			return new Promise((resolve, reject) => {
+				api.sendTextEffect(text, threadID, effect, (error, result) => error ? reject(error) : resolve(result));
+			});
+		},
+
+		/** Avatar character text effect ("love", "angry", "laugh", "cry"). */
+		avatarEffect(text, effect, callback) {
+			if (typeof callback === "function")
+				return api.sendAvatarTextEffect(text, threadID, effect, callback);
+			return new Promise((resolve, reject) => {
+				api.sendAvatarTextEffect(text, threadID, effect, (error, result) => error ? reject(error) : resolve(result));
+			});
+		},
+
+		/** Attach an Instagram music sticker. Accepts a track id or musicSearch result. */
+		music(track, callback) {
+			if (typeof callback === "function")
+				return api.sendMusic(threadID, track, callback);
+			return new Promise((resolve, reject) => {
+				api.sendMusic(threadID, track, (error, result) => error ? reject(error) : resolve(result));
+			});
+		},
+
+		/** Search Instagram's music catalogue. */
+		musicSearch(query, callback) {
+			if (typeof callback === "function")
+				return api.musicSearch(query, callback);
+			return new Promise((resolve, reject) => {
+				api.musicSearch(query, (error, result) => error ? reject(error) : resolve(result));
+			});
+		},
+
+		/** Show a typing indicator. Returns a stop function. */
+		typing() {
+			return api.sendTypingIndicator(threadID, () => { });
+		}
+	};
+
+	return context;
+}
+
+module.exports = { createMessageContext };

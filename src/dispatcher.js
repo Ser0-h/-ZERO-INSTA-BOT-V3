@@ -1,0 +1,304 @@
+"use strict";
+
+/**
+ * Message / event dispatcher: prefix parsing, roles, cooldowns, reply and
+ * reaction hooks, and event script fan-out.
+ * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
+ */
+
+const t = require("./languages").text;
+const log = require("./logger");
+const { createMessageContext } = require("./message");
+
+const ROLE_USER = 0;
+const ROLE_ADMIN_BOX = 1;
+const ROLE_ADMIN_BOT = 2;
+
+function createDispatcher({ api, config, registry, database }) {
+	const cooldowns = new Map();
+	const onReply = new Map(); // messageID -> { commandName, handler }
+	const onReaction = new Map(); // messageID -> { commandName, handler }
+	const refreshedUsers = new Set();
+
+	function senderIDOf(event) {
+		return String(event.senderID || event.userID || "");
+	}
+
+	function isBotAdmin(id) {
+		return config.adminBot.includes(String(id));
+	}
+
+	function roleOf(event, threadData) {
+		const senderID = senderIDOf(event);
+		if (isBotAdmin(senderID)) return ROLE_ADMIN_BOT;
+		const admins = (threadData && threadData.adminIDs) || [];
+		if (admins.map(String).includes(senderID)) return ROLE_ADMIN_BOX;
+		return ROLE_USER;
+	}
+
+	function requiredRole(command, threadData) {
+		const configured = command.config.role;
+		let role = 0;
+		if (typeof configured === "number") role = configured;
+		else if (configured && typeof configured === "object" && typeof configured.onStart === "number") role = configured.onStart;
+		if (threadData && threadData.settings && typeof threadData.settings.setRole === "object")
+			return threadData.settings.setRole[command.config.name] ?? role;
+		return role;
+	}
+
+	function allowedByWhitelist(event) {
+		if (!config.whiteList.enable) return true;
+		const senderID = senderIDOf(event);
+		if (isBotAdmin(senderID)) return true;
+		return config.whiteList.userIDs.includes(senderID) || config.whiteList.threadIDs.includes(String(event.threadID));
+	}
+
+	function cooldownRemaining(command, senderID) {
+		const seconds = Number(command.config.cooldown ?? config.cooldown.default) || 0;
+		if (seconds <= 0) return 0;
+		const key = `${command.config.name}:${senderID}`;
+		const last = cooldowns.get(key) || 0;
+		const remaining = last + seconds * 1000 - Date.now();
+		if (remaining > 0) return Math.ceil(remaining / 1000);
+		cooldowns.set(key, Date.now());
+		return 0;
+	}
+
+	function registerOnReply(messageID, commandName, handler) {
+		onReply.set(String(messageID), { commandName, handler });
+		return handler;
+	}
+
+	function registerOnReaction(messageID, commandName, handler) {
+		onReaction.set(String(messageID), { commandName, handler });
+		return handler;
+	}
+
+	function suggestionFor(name) {
+		if (!name) return null;
+		const candidates = new Set(registry.commands.keys());
+		for (const alias of registry.aliases.keys()) candidates.add(alias);
+
+		let best = null;
+		let bestDistance = Infinity;
+		for (const candidate of candidates) {
+			const distance = levenshtein(name, candidate);
+			// Nudge ties toward the shorter, more likely candidate.
+			if (distance < bestDistance || (distance === bestDistance && best && candidate.length < best.length)) {
+				bestDistance = distance;
+				best = candidate;
+			}
+		}
+		// Accept close matches only; 1 edit for short names, 2 for longer ones.
+		const limit = name.length <= 3 ? 1 : 2;
+		return bestDistance <= limit ? best : null;
+	}
+
+	function levenshtein(a, b) {
+		const rows = Array.from({ length: b.length + 1 }, (_, i) => i);
+		for (let i = 1; i <= a.length; i++) {
+			let previous = rows[0];
+			rows[0] = i;
+			for (let j = 1; j <= b.length; j++) {
+				const temp = rows[j];
+				rows[j] = Math.min(rows[j] + 1, rows[j - 1] + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1));
+				previous = temp;
+			}
+		}
+		return rows[b.length];
+	}
+
+	async function runCommands(event, message, threadData, userData) {
+		const body = typeof event.body === "string" ? event.body : "";
+		if (!body) return;
+		const senderID = senderIDOf(event);
+		const hasPrefix = config.prefix && body.startsWith(config.prefix);
+
+		const rawBody = hasPrefix ? body.slice(config.prefix.length).trim() : body.trim();
+		const rawArgs = rawBody ? rawBody.split(/\s+/) : [];
+		const rawName = (rawArgs[0] || "").toLowerCase();
+
+		// A command can opt into running without the prefix (config.noPrefix).
+		// `prefix` uses this so the operator is never locked out after changing
+		// (or forgetting) the prefix. Restrict to bot admins unless the command
+		// explicitly allows role 0.
+		const bare = registry.resolve(rawName);
+		const bareAllowed = !!bare && bare.config.noPrefix === true &&
+			(isBotAdmin(senderID) || bare.config.noPrefixRole === 0);
+		const noPrefixAllowed = config.noPrefix === true && isBotAdmin(senderID);
+
+		if (!hasPrefix && !bareAllowed && !noPrefixAllowed) return;
+
+		const args = rawArgs.slice();
+		const name = (args.shift() || "").toLowerCase();
+		const command = registry.resolve(name);
+
+		if (!command) {
+			if (config.hideNotiMessage.commandNotFound || !hasPrefix) return;
+			const suggestion = suggestionFor(name);
+			// Uses the configured prefix via {pn}: "Did you mean -ping or try -help".
+			const key = suggestion ? "commandNotFoundSuggestion" : "commandNotFound";
+			const text = t(config.language, key, suggestion || "");
+			return message.reply(text.replace(/\{pn\}/g, config.prefix));
+		}
+
+		const commandName = command.config.name.toLowerCase();
+
+		if (userData && userData.banned && userData.banned.status) {
+			if (!config.hideNotiMessage.userBanned)
+				return message.reply(t(config.language, "userBanned", config.botName, userData.banned.reason || "—"));
+			return;
+		}
+
+		if (config.adminOnly.enable && !isBotAdmin(senderID) && !config.adminOnly.ignoreCommands.includes(commandName)) {
+			if (!config.hideNotiMessage.adminOnly)
+				return message.reply(t(config.language, "onlyAdminBot", commandName));
+			return;
+		}
+
+		const role = roleOf(event, threadData);
+		const needRole = requiredRole(command, threadData);
+		if (needRole > role) {
+			if (!config.hideNotiMessage.needRoleToUseCommand) {
+				const key = needRole === ROLE_ADMIN_BOT ? "onlyAdminBot" : "onlyAdmin";
+				return message.reply(t(config.language, key, commandName));
+			}
+			return;
+		}
+
+		const wait = cooldownRemaining(command, senderID);
+		if (wait) return message.reply(t(config.language, "cooldown", wait, commandName));
+
+		const commandApi = {
+			api,
+			message,
+			event,
+			args,
+			commandName,
+			role,
+			usersData: database.users,
+			threadsData: database.threads,
+			userData,
+			threadData,
+			config,
+			registry,
+			/**
+			 * Arm a handler for a reply. Pass the message a user must reply TO
+			 * (`messageID`), e.g. the result of `message.reply(...)`. Without it
+			 * the triggering message is used, which only matches replies to the
+			 * command message itself.
+			 */
+			setReplyHandler(handler, messageID) {
+				const key = messageID != null ? messageID : event.messageID;
+				if (key == null) return handler;
+				onReply.set(String(key), { commandName, handler });
+				return handler;
+			},
+			setReactionHandler(handler, messageID) {
+				const key = messageID != null ? messageID : event.messageID;
+				if (key == null) return handler;
+				onReaction.set(String(key), { commandName, handler });
+				return handler;
+			}
+		};
+
+		try {
+			await command.onStart(commandApi);
+			log.info("COMMAND", `${commandName} | ${senderID} | ${event.threadID} | ${args.join(" ")}`);
+		}
+		catch (error) {
+			log.error("COMMAND", `Error in "${commandName}"`, error);
+			await message.reply(t(config.language, "errorOccurred", commandName, String(error.message || error)));
+		}
+	}
+
+	async function runReplyHandlers(event, message, threadData, userData) {
+		const repliedID = event.messageReply && event.messageReply.messageID;
+		if (!repliedID) return false;
+		const entry = onReply.get(String(repliedID));
+		if (!entry) return false;
+		try {
+			await entry.handler({ api, message, event, args: event.body ? event.body.split(/\s+/) : [], usersData: database.users, threadsData: database.threads, userData, threadData, config, commandName: entry.commandName });
+		}
+		catch (error) {
+			log.error("REPLY", `Error in reply handler for "${entry.commandName}"`, error);
+		}
+		return true;
+	}
+
+	async function runReactionHandlers(event, message, threadData, userData) {
+		const entry = onReaction.get(String(event.messageID));
+		if (!entry) return false;
+		try {
+			await entry.handler({ api, message, event, usersData: database.users, threadsData: database.threads, userData, threadData, config, commandName: entry.commandName });
+		}
+		catch (error) {
+			log.error("REACTION", `Error in reaction handler for "${entry.commandName}"`, error);
+		}
+		return true;
+	}
+
+	async function runEventScripts(event, message, threadData, userData) {
+		for (const script of registry.events) {
+			if (script.config.eventType && script.config.eventType !== event.type) continue;
+			try {
+				await script.onEvent({ api, message, event, usersData: database.users, threadsData: database.threads, userData, threadData, config, role: roleOf(event, threadData) });
+			}
+			catch (error) {
+				log.error("EVENT", `Error in event "${script.config.name}"`, error);
+			}
+		}
+	}
+
+	function refreshUserIfNeeded(userData, userID) {
+		if (!userData || userData.name || refreshedUsers.has(userID)) return;
+		refreshedUsers.add(userID);
+		api.getUserInfo(userID, (error, info) => {
+			if (error || !info || !info[userID]) return;
+			const profile = info[userID];
+			database.users.update(userID, {
+				name: profile.name || profile.firstName || null,
+				username: profile.vanity || null
+			});
+		});
+	}
+
+	async function handle(event) {
+		if (!event || !event.threadID) return;
+		const senderID = senderIDOf(event);
+		if (!senderID && (event.type === "message" || event.type === "message_reply")) return;
+
+		if (!allowedByWhitelist(event)) return;
+
+		const threadData = database.threads.ensure(event.threadID, { threadID: event.threadID });
+		let userData = null;
+		if (senderID) userData = database.users.ensure(senderID, { userID: senderID });
+		if (event.isGroup != null) threadData.isGroup = event.isGroup;
+
+		const message = createMessageContext({ api, event, log });
+
+		switch (event.type) {
+			case "message":
+			case "message_reply":
+				refreshUserIfNeeded(userData, senderID);
+				await runEventScripts(event, message, threadData, userData);
+				if (await runReplyHandlers(event, message, threadData, userData)) break;
+				await runCommands(event, message, threadData, userData);
+				break;
+			case "message_reaction":
+				await runEventScripts(event, message, threadData, userData);
+				await runReactionHandlers(event, message, threadData, userData);
+				break;
+			default:
+				await runEventScripts(event, message, threadData, userData);
+				break;
+		}
+
+		database.threads.flush();
+		database.users.flush();
+	}
+
+	return { handle, roleOf, registerOnReply, registerOnReaction, ROLE_USER, ROLE_ADMIN_BOX, ROLE_ADMIN_BOT };
+}
+
+module.exports = { createDispatcher, ROLE_USER, ROLE_ADMIN_BOX, ROLE_ADMIN_BOT };
