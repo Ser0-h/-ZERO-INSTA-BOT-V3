@@ -20,7 +20,7 @@
 
 ## Overview
 
-Insta Bot V1 provides command routing, role-based permissions, persistent bot state, media utilities, music tools, and resilient Chat API session recovery.
+Insta Bot V1 provides command routing, role-based permissions, persistent bot state, media utilities, and resilient Chat API session recovery.
 
 ## Requirements
 
@@ -97,8 +97,6 @@ chat.api.toke.neokex.ica.token.can.change.a9y.2ime.ok
 | `changename` | Group admins | `!changename <new name>` |
 | `welcome` | Group admins | `!welcome on\|off` |
 | `leave` | Group admins | `!leave on\|off` |
-| `stickermusic` | Everyone | `!stickermusic <search>` |
-| `sing` | Everyone | `!sing <search>` |
 | `setprofile` | Owner | `!setprofile <public image URL>` or reply to an image |
 | `eval` | Owner | `!eval <JavaScript>` |
 | `shell` | Owner | `!shell <command>` |
@@ -193,6 +191,36 @@ await downloadFile('https://example.com/a.png', './downloads/a.png');
 ## Security
 
 Never commit `account.txt`, `.env`, Instagram cookies, Chat API tokens, or other credentials.
+
+## Staying below Instagram's automation radar
+
+The bot is built so the account behaves like a person using Instagram, not like
+a script. If you change any of the following, understand what you are giving up:
+
+- **One Instagram login per cookie set.** The server keeps a single live
+  session per account and reuses it when the bot reconnects, so a dropped socket
+  never triggers a fresh Instagram login. Repeated logins are the fastest way to
+  get an account challenged, so do not restart the bot in a loop.
+- **Conservative request pacing.** The server serializes provider requests and
+  enforces a minimum delay between them (`INSTAGRAM_MIN_REQUEST_DELAY_MS`,
+  default 1500 ms) with `safeMode` on. Lowering this makes bursts of activity
+  look automated.
+- **No noisy presence signals.** Online presence, delivery receipts, typing
+  indicators and read receipts are off by default. A command only shows a typing
+  indicator if it asks for one explicitly.
+- **No unsolicited messages.** `autoReply` is off (the bot never greets people
+  on its own), and the bot ignores its own messages so it cannot reply to
+  itself. Set `autoReply: true` only if you really want greeting replies.
+- **Human-speed command use.** Commands have a per-command cooldown
+  (`commandCooldownMs`). Running the same command at machine speed is a clear
+  automation signal.
+- **Valid cookies or nothing.** The bot validates `account.txt` before
+  connecting and refuses to start with missing/expired cookies, so it never
+  retries a failed login in a loop.
+
+If Instagram ever shows a challenge or `login_required`, stop the bot, open
+Instagram yourself and clear the challenge, then export fresh cookies. Do not
+retry automatically.
 
 ## Related Projects
 
