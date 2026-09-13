@@ -213,6 +213,42 @@ function request(settings, method, args, callbackIndex) {
 	});
 }
 
+/**
+ * Hand the server this bot's cookies (POST /cookies) so a single-service
+ * deployment can keep cookies on the bot (account.txt / IG_COOKIES) instead of
+ * the server. Best-effort: a failure here is not fatal — the server may already
+ * have its own cookies.
+ */
+function pushCookies(settings, cookies) {
+	return new Promise(resolve => {
+		const target = settings.base;
+		const lib = target.protocol === "https:" ? https : http;
+		const payload = JSON.stringify({ cookies });
+		const req = lib.request({
+			protocol: target.protocol,
+			hostname: target.hostname,
+			port: target.port || (target.protocol === "https:" ? 443 : 80),
+			path: "/cookies",
+			method: "POST",
+			agent: target.protocol === "https:" ? httpsAgent : httpAgent,
+			headers: {
+				"Content-Type": "application/json",
+				"Content-Length": Buffer.byteLength(payload),
+				Authorization: "Bearer " + settings.token,
+				"X-Bot-Id": settings.botId
+			},
+			timeout: settings.timeout
+		}, res => {
+			res.resume();
+			res.on("end", () => resolve({ status: res.statusCode }));
+		});
+		req.on("timeout", () => req.destroy(new Error("cookie push timed out")));
+		req.on("error", () => resolve({ error: true }));
+		req.write(payload);
+		req.end();
+	});
+}
+
 /* ── realtime (SSE) ────────────────────────────────────────────────────── */
 
 class EventStream {
@@ -363,7 +399,28 @@ function login(options, callback) {
 	let rejectFunc = () => { };
 	const promise = new Promise((resolve, reject) => { resolveFunc = resolve; rejectFunc = reject; });
 
-	request(settings, "getCurrentUserID", [])
+	// Optionally seed the server with this bot's cookies first, then connect.
+	// `seed` resolves to the cookie value (an array/object/blob) or null.
+	const seed = options.cookies != null ? Promise.resolve(options.cookies)
+		: Array.isArray(options.appState) && options.appState.length ? Promise.resolve(options.appState)
+		: null;
+
+	// After seeding cookies the server needs a moment to log in to Instagram.
+	// Poll getCurrentUserID until it answers, so a first connect does not fail
+	// with "still logging in".
+	function connect(attemptsLeft) {
+		return request(settings, "getCurrentUserID", []).catch(error => {
+			const message = String(error && (error.message || error) || "");
+			const warming = /still logging in|not logged in|no cookies/i.test(message);
+			if (warming && attemptsLeft > 0) {
+				return new Promise(resolve => setTimeout(resolve, 3000)).then(() => connect(attemptsLeft - 1));
+			}
+			throw error;
+		});
+	}
+
+	(seed ? seed.then(value => pushCookies(settings, value)).catch(() => { }) : Promise.resolve())
+		.then(() => connect(Math.max(1, Math.floor(settings.timeout / 3000))))
 		.then(id => {
 			api._userID = id != null ? String(id) : null;
 			if (typeof callback === "function") callback(null, api);

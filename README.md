@@ -101,8 +101,10 @@ A `Dockerfile` is included. Both platforms can build it directly:
 
 ## Login
 
-InstaBOT connects to a **remote ig-chat-api-server** with a URL + token. Cookies
-live on the server, so the bot never touches `account.txt`.
+InstaBOT connects to a **remote ig-chat-api-server** with a URL + token. The bot
+sends its own Instagram cookies to that server, so you can keep cookies in
+`account.txt` (or an `IG_COOKIES` env var) **on the bot** — no need to configure
+them on the server too.
 
 ### Mode A — Remote server (recommended, deployed)
 
@@ -117,16 +119,24 @@ Set both values (or the environment fallbacks) and the bot is ready:
 }
 ```
 
+On connect the bot reads its cookies — `IG_COOKIES` if set, else `account.txt` —
+and sends them to the server (`POST /cookies`). The server uses yours when it has
+none of its own; a server-side cookie file/env still takes priority. If the
+server already has cookies, the bot's are simply ignored.
+
+> **Which cookies win?** The server's own sources (`accounts/<id>.txt`,
+> `IG_ACCOUNTS`, `IG_COOKIES` on the *server*) take priority; the bot's pushed
+> cookies are a fallback. Either model works — pick one place to manage them.
+
 `botId` picks which Instagram account this bot owns on a **multi-bot server**
 (the server loads `accounts/<botId>.txt`). Leave it `"default"` for a
 single-bot server, or set it to your bot's id (e.g. `"salesbot"`).
 
-> **The bot id must exist on the server.** It must match one of the server's
-> cookies: either `default` (from `IG_COOKIES` / `account.txt`) or a key in the
-> server's `IG_ACCOUNTS` map / an `accounts/<botId>.txt` file. A mismatch is the
-> most common deploy failure — the server replies `Unknown bot id "<id>"`.
-> Check with `curl -H "Authorization: Bearer $IG_API_TOKEN" "$IG_API_SERVER/health"`
-> and look at `sessions`.
+> **⚠️ Set the bot id.** If the server has cookies under one id (say `salesbot`)
+> but the bot connects as `default`, the server answers
+> `Unknown bot id "default"` and the bot cannot log in. Set `IG_BOT_ID` (or
+> `server.botId`) to the **exact** id the server loads. For a single-bot server
+> using `IG_COOKIES` or a bot-pushed cookie, leave it `default`.
 
 Environment fallbacks: `IG_API_SERVER`, `IG_API_TOKEN`, and `IG_BOT_ID`.
 
@@ -228,6 +238,7 @@ Other environment variables:
 | Variable | Purpose |
 | --- | --- |
 | `IG_API_SERVER` / `IG_API_TOKEN` / `IG_BOT_ID` | Server URL, token, and which account this bot owns (see above) |
+| `IG_COOKIES` | Instagram cookies to send to the server (wins over `account.txt`). Accepts a header string, JSON array, or Netscape text |
 | `IG_MAX_MEDIA_BYTES` | Largest local media file the bot will upload, in bytes (default 5 MB). Base64 adds ~33%, so keep it under the server's `IG_MAX_BODY_BYTES` (default 8 MB) |
 
 

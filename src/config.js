@@ -96,8 +96,9 @@ function netScapeToCookies(text) {
 	const cookies = [];
 	for (const rawLine of text.split(/\r?\n/)) {
 		const line = rawLine.trim();
-		if (!line || line.startsWith("#")) continue;
-		const fields = line.replace(/^#HttpOnly_/, "").split("\t").map(f => f.trim()).filter(Boolean);
+		// `#HttpOnly_` lines are real cookies, not comments; only skip the rest.
+		if (!line || (line.startsWith("#") && !/^#HttpOnly_/i.test(line))) continue;
+		const fields = line.replace(/^#HttpOnly_/i, "").split("\t").map(f => f.trim()).filter(Boolean);
 		if (fields.length < 7) continue;
 		cookies.push({
 			key: fields[5],
