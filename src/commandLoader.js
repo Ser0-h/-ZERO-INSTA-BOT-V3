@@ -99,7 +99,13 @@ function createRegistry() {
 }
 
 // Load every .js file from the built-in and user "custom" directories.
+// Idempotent: clears the registry first, so calling it again (e.g. after a
+// reconnect retry) reloads fresh instead of stacking duplicate entries.
 function loadAll(registry) {
+	registry.commands.clear();
+	registry.aliases.clear();
+	registry.events.length = 0;
+
 	let commandCount = 0;
 	let eventCount = 0;
 
