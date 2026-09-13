@@ -90,18 +90,15 @@ test('keeps reaction removal and toggle methods available', async () => {
   ]);
 });
 
-test('forwards effects and music sticker methods with normalized thread IDs', async () => {
+test('forwards message effect methods with normalized thread IDs', async () => {
   const calls = [];
   const api = adaptClient({
-    sendEffects: async (...args) => calls.push(['effect', ...args]),
-    stickerMusic: async (...args) => calls.push(['music', ...args])
+    sendEffects: async (...args) => calls.push(['effect', ...args])
   });
 
   await api.sendEffects(123, '\u2751 hello', 'fire');
-  await api.stickerMusic(456, 'song');
   assert.deepEqual(calls, [
-    ['effect', '123', '❏ hello', 'fire'],
-    ['music', '456', 'song', undefined]
+    ['effect', '123', '❏ hello', 'fire']
   ]);
 });
 
@@ -126,22 +123,22 @@ test('forwards group participant management methods', async () => {
 test('falls back to client.call for operations a newer server added', async () => {
   const calls = [];
   const api = adaptClient({
-    call: async (operation, args) => { calls.push([operation, args]); return { effect: args[2] }; },
+    call: async (operation, args) => { calls.push([operation, args]); return { sent: true }; },
     sendMessage: async () => {}
   });
 
-  const result = await api.sendAvatarEffect(123, 'hi', 'love', { mediaUrl: 'https://cdn.example/a.gif' });
+  const result = await api.sendPhotoFromUrl('123', 'https://cdn.example/a.gif');
   assert.deepEqual(calls, [
-    ['sendAvatarEffect', ['123', 'hi', 'love', { mediaUrl: 'https://cdn.example/a.gif' }]]
+    ['sendPhotoFromUrl', ['123', 'https://cdn.example/a.gif', undefined]]
   ]);
-  assert.deepEqual(result, { effect: 'love' });
+  assert.deepEqual(result, { sent: true });
 });
 
 test('reports a clear error when neither the method nor call fallback exists', async () => {
   const api = adaptClient({ sendMessage: async () => {} });
-  await assert.rejects(() => api.sendAvatarEffect('thread', 'hi', 'love'), /does not support "sendAvatarEffect"/);
+  await assert.rejects(() => api.sendPhotoFromUrl('thread', 'https://cdn.example/a.gif'), /does not support "sendPhotoFromUrl"/);
   try {
-    await api.sendAvatarEffect('thread', 'hi', 'love');
+    await api.sendPhotoFromUrl('thread', 'https://cdn.example/a.gif');
   } catch (error) {
     assert.equal(error.code, 'UNSUPPORTED_OPERATION');
   }

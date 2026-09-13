@@ -73,15 +73,7 @@ function adaptClient(client) {
       typeof text === 'string' ? normalizeOutgoingText(text) : text,
       effect
     ]),
-    sendAvatarEffect: delegate('sendAvatarEffect', (threadID, text, effect, options) => [
-      String(threadID),
-      typeof text === 'string' ? normalizeOutgoingText(text) : text,
-      effect,
-      options
-    ]),
-    listAvatarEffects: delegate('listAvatarEffects', () => []),
     listEffects: delegate('listEffects', () => []),
-    stickerMusic: delegate('stickerMusic', (threadID, queryOrTrack, options) => [String(threadID), queryOrTrack, options]),
     sendPhotoFromUrl: delegate('sendPhotoFromUrl', (threadID, imageUrl, options) => [threadID, imageUrl, options]),
     sendVoiceFromUrl: delegate('sendVoiceFromUrl', (threadID, audioUrl, options) => [threadID, audioUrl, options]),
     sendGIF: delegate('sendGIF', (threadID, gifUrl, options) => [threadID, gifUrl, options]),

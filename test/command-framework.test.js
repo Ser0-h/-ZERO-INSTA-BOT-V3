@@ -714,75 +714,8 @@ test('does not run any-event hooks for blocked threads', async () => {
 
 test('command loader resolves relative directories from any working directory', () => {
   const loaded = loadCommands('./scripts/cmds', logger);
-  assert.equal(loaded.commands.has('aveffect'), true);
+  assert.equal(loaded.commands.has('effect'), true);
   assert.equal(loaded.commands.has('help'), true);
-});
-
-test('avatar effect command lists effects and sends the resolved style', async () => {
-  const avatarCommand = require('../scripts/cmds/aveffect');
-  const replies = [];
-  const sent = [];
-  const context = {
-    api: {
-      listAvatarEffects: () => [
-        { name: 'love', style: 1000, aliases: ['heart'] },
-        { name: 'angry', style: 1001, aliases: [] }
-      ],
-      sendAvatarEffect: async (...args) => { sent.push(args); return { effect: args[2] }; }
-    },
-    threadID: 'thread-1',
-    event: {},
-    message: {
-      reply: async (content) => replies.push(content),
-      react: async () => {}
-    }
-  };
-
-  await avatarCommand.onStart({ ...context, args: ['list'] });
-  assert.match(replies[0], /love \(1000\)/);
-  assert.match(replies[0], /heart/);
-
-  await avatarCommand.onStart({ ...context, args: ['heart', 'hello'] });
-  assert.equal(sent[0][0], 'thread-1');
-  assert.equal(sent[0][1], 'hello');
-  assert.equal(sent[0][2], 'love');
-  assert.equal(sent[0][3], undefined);
-  assert.match(replies[1], /Avatar effect sent: love/);
-});
-
-test('avatar effect command forwards an explicit media URL when supplied', async () => {
-  const avatarCommand = require('../scripts/cmds/aveffect');
-  const sent = [];
-  const context = {
-    api: {
-      listAvatarEffects: () => [{ name: 'love', style: 1000, aliases: [] }],
-      sendAvatarEffect: async (...args) => { sent.push(args); return { effect: args[2] }; }
-    },
-    threadID: 'thread-1',
-    event: {},
-    args: ['love', 'hi', 'https://cdn.example/clip.gif'],
-    message: { reply: async () => {}, react: async () => {} }
-  };
-  await avatarCommand.onStart(context);
-  assert.deepEqual(sent[0], [
-    'thread-1',
-    'hi',
-    'love',
-    { mediaUrl: 'https://cdn.example/clip.gif' }
-  ]);
-});
-
-test('avatar effect command rejects unknown effects', async () => {
-  const avatarCommand = require('../scripts/cmds/aveffect');
-  const replies = [];
-  await avatarCommand.onStart({
-    api: { listAvatarEffects: () => [{ name: 'love', style: 1000, aliases: [] }], sendAvatarEffect: async () => ({}) },
-    threadID: 'thread-1',
-    event: {},
-    args: ['nope'],
-    message: { reply: async (content) => replies.push(content), react: async () => {} }
-  });
-  assert.match(replies[0], /Unknown avatar effect/);
 });
 
 test('message exposes Goatbot-style err and SyntaxError helpers', async () => {
