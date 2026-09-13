@@ -100,15 +100,21 @@ Set both values (or the environment fallbacks) and the bot is ready:
 "server": {
   "url": "https://<your-server-host>",
   "token": "<IG_TOKEN from the server>",
+  "botId": "default",
   "timeout": 60000
 }
 ```
 
-Environment fallbacks: `IG_API_SERVER` and `IG_API_TOKEN`.
+`botId` picks which Instagram account this bot owns on a **multi-bot server**
+(the server loads `accounts/<botId>.txt`). Leave it `"default"` for a
+single-bot server, or set it to your bot's id (e.g. `"salesbot"`).
+
+Environment fallbacks: `IG_API_SERVER`, `IG_API_TOKEN`, and `IG_BOT_ID`.
 
 ```bash
 IG_API_SERVER="https://<your-server-host>" \
 IG_API_TOKEN="<IG_TOKEN from the server>" \
+IG_BOT_ID="salesbot" \
 npm start
 ```
 
@@ -176,6 +182,7 @@ locally and streamed to the server as bytes.
 | `adminBot` | Array of user IDs with bot-admin rights |
 | `env.token` / `env.url` | Optional secrets/endpoints; overridden by the environment |
 | `server.url` / `server.token` | Connect to a remote ig-chat-api server (skips cookies) |
+| `server.botId` | Which account this bot owns on a multi-bot server (default `"default"`) |
 | `server.timeout` | Server request timeout in ms |
 | `music.enable` | Turn the `sing` music search on/off |
 | `music.apiUrl` / `music.apiToken` | Your own music server (blank = use Instagram's catalogue) |

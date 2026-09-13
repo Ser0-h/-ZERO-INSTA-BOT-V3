@@ -158,6 +158,9 @@ function normalizeSettings(options) {
 	return {
 		base: parseServer(server),
 		token,
+		// Which account this bot owns on a multi-bot server. The server keys
+		// each Instagram session by this id; unset means the "default" session.
+		botId: String(options.botId || process.env.IG_BOT_ID || "default").trim() || "default",
 		timeout: Number(options.timeout) || 60000,
 		selfListen: options.selfListen === true || options.selfListen === "true"
 	};
@@ -181,7 +184,8 @@ function request(settings, method, args, callbackIndex) {
 			headers: {
 				"Content-Type": "application/json",
 				"Content-Length": Buffer.byteLength(payload),
-				Authorization: "Bearer " + settings.token
+				Authorization: "Bearer " + settings.token,
+				"X-Bot-Id": settings.botId
 			},
 			timeout: settings.timeout
 		}, res => {
@@ -241,9 +245,13 @@ class EventStream {
 			protocol: target.protocol,
 			hostname: target.hostname,
 			port: target.port || (target.protocol === "https:" ? 443 : 80),
-			path: "/events" + (this.settings.selfListen ? "?selfListen=1" : ""),
+			path: "/events?botId=" + encodeURIComponent(this.settings.botId) + (this.settings.selfListen ? "&selfListen=1" : ""),
 			method: "GET",
-			headers: { Accept: "text/event-stream", Authorization: "Bearer " + this.settings.token }
+			headers: {
+				Accept: "text/event-stream",
+				Authorization: "Bearer " + this.settings.token,
+				"X-Bot-Id": this.settings.botId
+			}
 		}, res => {
 			if (res.statusCode === 401) {
 				this.callback(new Error("Unauthorized: check your server token"));

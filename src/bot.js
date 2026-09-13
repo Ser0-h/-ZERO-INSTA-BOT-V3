@@ -142,10 +142,11 @@ function createBot(config) {
 				const options = {
 					server: config.server.url,
 					token: config.server.token,
+					botId: config.server.botId,
 					timeout: Number(config.server.timeout) || 60000,
 					selfListen: config.selfListen === true
 				};
-				log.info("LOGIN", `Connecting to ig-chat-api server at ${options.server}${options.selfListen ? " (selfListen on)" : ""}`);
+				log.info("LOGIN", `Connecting to ig-chat-api server at ${options.server} as "${options.botId || "default"}"${options.selfListen ? " (selfListen on)" : ""}`);
 				Promise.resolve(login(options)).then(api => finish(null, api), finish);
 				return;
 			}

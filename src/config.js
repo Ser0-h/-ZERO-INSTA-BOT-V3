@@ -66,6 +66,8 @@ function loadConfig() {
 	config.server = config.server || {};
 	config.server.url = config.server.url || process.env.IG_API_SERVER || "";
 	config.server.token = config.server.token || process.env.IG_API_TOKEN || "";
+	// Which account this bot owns on a multi-bot server. Defaults to "default".
+	config.server.botId = String(config.server.botId || process.env.IG_BOT_ID || "default").trim() || "default";
 	config.server.timeout = Number(config.server.timeout) || 60000;
 
 	// Welcome / leave announcements for group threads.

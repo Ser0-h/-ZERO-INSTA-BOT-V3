@@ -591,6 +591,52 @@ async function main() {
 		}
 	});
 
+	/* ── multi-bot: bot id plumbing ── */
+	await test("auth: sends X-Bot-Id and scopes /events by botId", async () => {
+		const auth = require(path.join(root, "auth"));
+		const http = require("http");
+		const seen = [];
+		const server = http.createServer((req, res) => {
+			seen.push({ url: req.url, botId: req.headers["x-bot-id"] });
+			if (req.url.startsWith("/events")) {
+				res.writeHead(200, { "Content-Type": "text/event-stream" });
+				res.write("retry: 3000\n\n");
+				return; // keep the stream open
+			}
+			let body = "";
+			req.on("data", c => { body += c; });
+			req.on("end", () => {
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ ok: true, result: "123" }));
+			});
+		});
+		await new Promise(r => server.listen(0, "127.0.0.1", r));
+		const port = server.address().port;
+		let stream = null;
+		try {
+			const api = await auth({ server: "http://127.0.0.1:" + port, token: "t", botId: "botA" });
+			await api.getCurrentUserID();
+			stream = api.listenMqtt(() => { });
+			await new Promise(r => setTimeout(r, 150));
+			const rpc = seen.find(s => s.url === "/rpc");
+			assert.strictEqual(rpc.botId, "botA", "rpc must carry X-Bot-Id");
+			const events = seen.find(s => s.url.startsWith("/events"));
+			assert.ok(events, "expected an /events request");
+			assert.strictEqual(events.botId, "botA", "events must carry X-Bot-Id");
+			assert.ok(/botId=botA/.test(events.url), "events URL must scope the bot id");
+		}
+		finally {
+			if (stream) stream();
+			server.close();
+		}
+	});
+
+	await test("config: server.botId defaults to 'default'", () => {
+		const { loadConfig } = require(path.join(root, "src/config"));
+		const config = loadConfig();
+		assert.strictEqual(config.server.botId, "default");
+	});
+
 	/* ── anisearch ── */
 	await test("anisearch: registered with the Neoaz author", () => {
 		const command = registry.resolve("anisearch");
