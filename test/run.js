@@ -726,6 +726,38 @@ async function main() {
 		assert.ok(/Could not find a video/.test(String(sent)), "expected an error reply");
 	});
 
+	await test("boot: retries instead of exiting when the server has no session", async () => {
+		const { createBot } = require(path.join(root, "src/bot"));
+		const http = require("http");
+		const os = require("os");
+		let requests = 0;
+		const server = http.createServer((req, res) => {
+			requests++;
+			if (req.url.startsWith("/events")) { res.writeHead(200, { "Content-Type": "text/event-stream" }); return; }
+			res.writeHead(404, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ ok: false, error: { message: 'Unknown bot id "default". No sessions are configured' } }));
+		});
+		await new Promise(r => server.listen(0, "127.0.0.1", r));
+		const port = server.address().port;
+		const config = {
+			botName: "TestBot", prefix: "/", adminBot: [], env: {},
+			server: { url: "http://127.0.0.1:" + port, token: "t", botId: "default", timeout: 2000 },
+			account: {}, database: { dir: path.join(os.tmpdir(), "igbot-test-" + process.pid) },
+			logEvents: { disableAll: true },
+			onlineStatus: { enable: false },
+			welcome: { enable: false }, leave: { enable: false }
+		};
+		const bot = createBot(config);
+		let settled = false;
+		const startPromise = bot.start().then(() => { settled = true; }, () => { settled = true; });
+		await new Promise(r => setTimeout(r, 1500));
+		assert.strictEqual(settled, false, "start() must stay pending while retrying");
+		assert.ok(requests >= 1, "the bot should have attempted at least one connect");
+		await bot.stop();
+		await Promise.race([startPromise, new Promise(r => setTimeout(r, 3000))]);
+		server.close();
+	});
+
 	/* ── summary ── */
 	const failed = results.filter(r => !r.ok);
 	for (const r of results)

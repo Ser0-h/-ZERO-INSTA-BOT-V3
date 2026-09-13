@@ -86,6 +86,7 @@ function createBot(config) {
 		restartTimer: null,
 		retireListener: null,
 		running: false,
+		stopping: false,
 		commandCount: 0,
 		eventCount: 0,
 		messagesHandled: 0
@@ -263,13 +264,35 @@ function createBot(config) {
 
 	async function start() {
 		log.master("BOOT", `${config.botName} starting…`);
-		await startServer();
+		// Retry the initial connection instead of exiting: the server may not have
+		// cookies yet (or may be cold-starting on a free tier). A fatal exit here
+		// would fail the deploy and also stop the bot from recovering on its own.
+		let attempt = 0;
+		for (;;) {
+			if (state.stopping) return;
+			try {
+				await startServer();
+				break;
+			}
+			catch (error) {
+				attempt++;
+				const message = String(error && (error.error || error.message) || error);
+				const delay = Math.min(60000, 5000 * attempt);
+				onlineStatus.writeLine({ event: "boot_retry", attempt, error: message });
+				log.warn("BOOT", `Could not connect (attempt ${attempt}): ${message}. Retrying in ${Math.round(delay / 1000)}s…`);
+				// Keep the process alive so the host does not mark the deploy failed
+				// and so a later cookie/server fix is picked up without a redeploy.
+				await new Promise(resolve => setTimeout(resolve, delay));
+			}
+		}
+		if (state.stopping) return;
 		state.running = true;
 		log.success("BOOT", `${config.botName} is online. Type ${config.prefix}help in a chat.`);
 	}
 
 	async function stop() {
 		state.running = false;
+		state.stopping = true;
 		onlineStatus.writeLine({ event: "stopping" });
 		try {
 			if (typeof state.stopListening === "function") state.stopListening();

@@ -64,7 +64,14 @@ npm start
 npm test
 ```
 
-> Node 18 or newer.
+> Node 18 or newer. **The bot needs the deployed server URL and token — not the
+> local `http://127.0.0.1:8787` one.** `config.json` ships with the local URL as a
+> development placeholder; replace it with your deployed URL before running.
+>
+> Deploy the server first (see
+> [`ig-chat-api-server`](https://github.com/lazyneoaz/ig-chat-api-server)), which
+> prints its URL after deploy and takes `IG_TOKEN` + `IG_COOKIES` as environment
+> variables.
 
 ---
 
@@ -79,8 +86,16 @@ A `Dockerfile` is included. Both platforms can build it directly:
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `IG_API_SERVER` | ✅ | Deployed ig-chat-api-server URL (e.g. `https://nkx-ica.neokex.xyz/`) |
+| `IG_API_SERVER` | ✅ | Deployed ig-chat-api-server URL (e.g. `https://ig-server.onrender.com`) |
 | `IG_API_TOKEN` | ✅ | Must equal the server's `IG_TOKEN` |
+| `IG_BOT_ID` | ⚠️ for multi-bot | Which account this bot owns on the server (defaults to `default`) |
+
+> **⚠️ Set the bot id.** If the server has cookies under one id (say `salesbot`)
+> but the bot connects as `default`, the server answers
+> `Unknown bot id "default"` and the bot cannot log in. Set `IG_BOT_ID` (or
+> `server.botId`) to the **exact** id the server loads. For a single-bot server
+> using `IG_COOKIES`, leave it `default`.
+
 
 ---
 
@@ -95,7 +110,7 @@ Set both values (or the environment fallbacks) and the bot is ready:
 
 ```json
 "server": {
-  "url": "https://nkx-ica.neokex.xyz/",
+  "url": "https://<your-server-host>",
   "token": "<IG_TOKEN from the server>",
   "botId": "default",
   "timeout": 60000
@@ -105,6 +120,13 @@ Set both values (or the environment fallbacks) and the bot is ready:
 `botId` picks which Instagram account this bot owns on a **multi-bot server**
 (the server loads `accounts/<botId>.txt`). Leave it `"default"` for a
 single-bot server, or set it to your bot's id (e.g. `"salesbot"`).
+
+> **The bot id must exist on the server.** It must match one of the server's
+> cookies: either `default` (from `IG_COOKIES` / `account.txt`) or a key in the
+> server's `IG_ACCOUNTS` map / an `accounts/<botId>.txt` file. A mismatch is the
+> most common deploy failure — the server replies `Unknown bot id "<id>"`.
+> Check with `curl -H "Authorization: Bearer $IG_API_TOKEN" "$IG_API_SERVER/health"`
+> and look at `sessions`.
 
 Environment fallbacks: `IG_API_SERVER`, `IG_API_TOKEN`, and `IG_BOT_ID`.
 
@@ -118,7 +140,8 @@ npm start
 Example (replace with your real deploy):
 
 ```
-IG_API_SERVER=IG_API_TOKEN=<the same long secret you set as the server's IG_TOKEN>
+IG_API_SERVER=https://ig-chat-api-server.onrender.com
+IG_API_TOKEN=<the same long secret you set as the server's IG_TOKEN>
 ```
 
 ### Mode B — Direct (cookies, local development only)

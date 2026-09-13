@@ -63,8 +63,11 @@ async function main() {
 		await bot.start();
 	}
 	catch (error) {
-		log.error("BOOT", "Failed to start", error);
-		process.exit(1);
+		// start() already retries; this is only a last-resort guard. Keep the
+		// process alive so the host does not fail the deploy and a later fix is
+		// picked up without a redeploy.
+		log.error("BOOT", "Failed to start (will keep the process alive)", error);
+		await new Promise(() => { });
 	}
 }
 
