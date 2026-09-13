@@ -64,14 +64,7 @@ npm start
 npm test
 ```
 
-> Node 18 or newer. **The bot needs the deployed server URL and token — not the
-> local `http://127.0.0.1:8787` one.** `config.json` ships with the local URL as a
-> development placeholder; replace it with your deployed URL before running.
->
-> Deploy the server first (see
-> [`ig-chat-api-server`](https://nkx-ica.neokex.xyz)), which
-> prints its URL after deploy and takes `IG_TOKEN` + `IG_COOKIES` as environment
-> variables.
+> Node 18 or newer.
 
 ---
 
@@ -86,7 +79,7 @@ A `Dockerfile` is included. Both platforms can build it directly:
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `IG_API_SERVER` | ✅ | Deployed ig-chat-api-server URL (e.g. `https://ig-server.onrender.com`) |
+| `IG_API_SERVER` | ✅ | Deployed ig-chat-api-server URL (e.g. `https://nkx-ica.neokex.xyz/`) |
 | `IG_API_TOKEN` | ✅ | Must equal the server's `IG_TOKEN` |
 
 ---
@@ -102,7 +95,7 @@ Set both values (or the environment fallbacks) and the bot is ready:
 
 ```json
 "server": {
-  "url": "https://<your-server-host>",
+  "url": "https://nkx-ica.neokex.xyz/",
   "token": "<IG_TOKEN from the server>",
   "botId": "default",
   "timeout": 60000
@@ -125,8 +118,7 @@ npm start
 Example (replace with your real deploy):
 
 ```
-IG_API_SERVER=https://ig-chat-api-server.onrender.com
-IG_API_TOKEN=<the same long secret you set as the server's IG_TOKEN>
+IG_API_SERVER=IG_API_TOKEN=<the same long secret you set as the server's IG_TOKEN>
 ```
 
 ### Mode B — Direct (cookies, local development only)
