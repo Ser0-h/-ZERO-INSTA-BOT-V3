@@ -163,6 +163,22 @@ async function main() {
 		assert.strictEqual(list[0].key, "sessionid");
 	});
 
+	await test("config: netscape #HttpOnly_ lines are not skipped", () => {
+		// Cookie-Editor exports sessionid as an HttpOnly cookie, i.e. a
+		// `#HttpOnly_` line. Skipping it (as a comment) drops the login cookie.
+		const text = [
+			"# Netscape HTTP Cookie File",
+			"#HttpOnly_.instagram.com\tTRUE\t/\tTRUE\t1823895835\tcsrftoken\tTOKEN",
+			"#HttpOnly_.instagram.com\tTRUE\t/\tTRUE\t1823746805\tsessionid\tSID123",
+			".instagram.com\tTRUE\t/\tTRUE\t1797111835\tds_user_id\t42"
+		].join("\n");
+		const list = netScapeToCookies(text);
+		const keys = list.map(c => c.key);
+		assert.ok(keys.includes("sessionid"), "sessionid must survive the #HttpOnly_ prefix");
+		assert.ok(keys.includes("csrftoken"), "csrftoken must survive");
+		assert.ok(keys.includes("ds_user_id"), "ds_user_id must survive");
+	});
+
 	/* ── utils ── */
 	await test("utils: mediaKind by extension and mime", () => {
 		assert.strictEqual(utils.mediaKind("a.mp4"), "video");
@@ -724,6 +740,40 @@ async function main() {
 			global.fetch = originalFetch;
 		}
 		assert.ok(/Could not find a video/.test(String(sent)), "expected an error reply");
+	});
+
+	await test("auth: pushes bot cookies to POST /cookies before connecting", async () => {
+		const auth = require(path.join(root, "auth"));
+		const http = require("http");
+		const seen = [];
+		const server = http.createServer((req, res) => {
+			let body = "";
+			req.on("data", c => { body += c; });
+			req.on("end", () => {
+				seen.push({ url: req.url, botId: req.headers["x-bot-id"], body });
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ ok: true, result: req.url === "/cookies" ? { accepted: true } : "123" }));
+			});
+		});
+		await new Promise(r => server.listen(0, "127.0.0.1", r));
+		const port = server.address().port;
+		try {
+			const cookies = [
+				{ key: "sessionid", value: "SID", domain: "instagram.com", path: "/" },
+				{ key: "ds_user_id", value: "42", domain: "instagram.com", path: "/" }
+			];
+			const api = await auth({ server: "http://127.0.0.1:" + port, token: "t", botId: "botA", cookies });
+			assert.strictEqual(api.getCurrentUserID(), "123");
+			const push = seen.find(s => s.url === "/cookies");
+			assert.ok(push, "expected a POST /cookies");
+			assert.strictEqual(push.botId, "botA", "the push must carry X-Bot-Id");
+			const parsed = JSON.parse(push.body);
+			assert.ok(Array.isArray(parsed.cookies), "cookies must be sent as an array");
+			const idx = seen.findIndex(s => s.url === "/cookies");
+			const rpc = seen.findIndex(s => s.url === "/rpc");
+			assert.ok(idx < rpc, "cookies must be pushed before the first RPC");
+		}
+		finally { server.close(); }
 	});
 
 	await test("boot: retries instead of exiting when the server has no session", async () => {

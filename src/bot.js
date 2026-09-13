@@ -15,6 +15,22 @@ const { createOnlineStatus } = require("./onlineStatus");
 const serverLogin = require("../auth");
 
 /**
+ * Cookies the bot itself will hand to the server. `IG_COOKIES` (an env var on
+ * the bot service) wins, else `account.txt`. Returns a cookie blob (string,
+ * JSON array or Netscape text) the server understands, or null when the bot has
+ * none — in which case the server must have its own.
+ */
+function loadServerCookies() {
+	if (process.env.IG_COOKIES && process.env.IG_COOKIES.trim()) return process.env.IG_COOKIES.trim();
+	try {
+		return loadAccount();
+	}
+	catch (_) {
+		return null;
+	}
+}
+
+/**
  * Resolve the login function. When `server.url` + `server.token` are set the
  * bot talks to the private ig-chat-api server through auth.js; otherwise it
  * falls back to a locally-installed ig-chat-api package (Mode B, development).
@@ -147,7 +163,11 @@ function createBot(config) {
 					token: config.server.token,
 					botId: config.server.botId,
 					timeout: Number(config.server.timeout) || 60000,
-					selfListen: config.selfListen === true
+					selfListen: config.selfListen === true,
+					// Hand the server our cookies (account.txt / IG_COOKIES) so the
+					// bot can own them instead of the server. Re-read on every
+					// attempt so a repaste is picked up on reconnect.
+					cookies: loadServerCookies()
 				};
 				log.info("LOGIN", `Connecting to ig-chat-api server at ${options.server} as "${options.botId || "default"}"${options.selfListen ? " (selfListen on)" : ""}`);
 				Promise.resolve(login(options)).then(api => finish(null, api), finish);
