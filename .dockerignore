@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+*.log
+account.txt
+instabot-live-send.json
+Dockerfile
+.dockerignore
+README.md
