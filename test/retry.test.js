@@ -25,6 +25,10 @@ test('retries unavailable services with capped exponential delays', async () => 
 
 test('does not retry local configuration errors', () => {
   assert.equal(isRetryableStartupError(new Error('Could not read Instagram cookie file')), false);
+  assert.equal(
+    isRetryableStartupError(new Error('Instagram cookie file ./account.txt is missing required cookie(s): csrftoken.')),
+    false
+  );
   assert.equal(isRetryableStartupError(Object.assign(new Error('Bad request'), { code: 'INVALID_REQUEST' })), false);
 });
 

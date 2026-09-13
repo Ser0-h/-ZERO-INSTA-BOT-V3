@@ -39,6 +39,7 @@ function isRetryableStartupError(error) {
   if (
     message.startsWith('could not read instagram cookie file')
     || message.startsWith('instagram cookie file is empty')
+    || message.includes('is missing required cookie')
     || message.includes('chat api url is missing')
     || message.includes('chat api settings are missing')
     || message.includes('chat api token is required')

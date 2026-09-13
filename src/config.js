@@ -79,8 +79,14 @@ function loadConfig(rootDir = path.resolve(__dirname, '..')) {
     stateFile: resolveFromRoot(rootDir, settings.stateFile, 'data/bot-state.json'),
     accountFile: resolveAccountFile(rootDir, settings.accountFile, env),
     prefix: stringFromValue(settings.prefix, '!'),
-    adminIds: new Set(listFromValue(settings.adminIds)),
-    ownerId: stringFromValue(settings.ownerId),
+    // The owner and admins are Instagram numeric user IDs. They can be set here
+    // or, preferably, overridden with OWNER_ID / ADMIN_IDS in the environment so
+    // a real account ID is never committed to the repository.
+    adminIds: new Set([
+      ...listFromValue(environmentValue('ADMIN_IDS', env)),
+      ...listFromValue(settings.adminIds)
+    ]),
+    ownerId: stringFromValue(environmentValue('OWNER_ID', env), stringFromValue(settings.ownerId)),
     allowThreadAdmins: booleanFromValue(settings.allowThreadAdmins, true),
     allowedThreads: new Set(listFromValue(settings.allowedThreads)),
     blockedThreads: new Set(listFromValue(settings.blockedThreads)),

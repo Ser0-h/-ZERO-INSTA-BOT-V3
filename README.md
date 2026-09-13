@@ -39,10 +39,15 @@ node nkx.js
 ```
 
 Place the cookie export at `./account.txt`, or set `ACCOUNT_FILE` in `.env`.
+The bot checks the file before it connects and refuses to start if it is empty
+or missing the required Instagram cookies (`sessionid`, `ds_user_id`,
+`csrftoken`), so a stale export fails immediately instead of triggering repeated
+failed logins.
 
 ## Configuration
 
-Set the owner and bot administrators in `config.json`:
+Set the owner and bot administrators in `config.json`, or override them in the
+environment (recommended, so a real account ID is never committed):
 
 ```json
 {
@@ -55,6 +60,8 @@ Set the owner and bot administrators in `config.json`:
 | Variable | Purpose |
 | --- | --- |
 | `ACCOUNT_FILE` | Instagram cookie export path |
+| `OWNER_ID` | Instagram user ID of the bot owner (overrides `config.json`) |
+| `ADMIN_IDS` | Comma-separated Instagram user IDs for admins (added to `config.json`) |
 | `CHAT_API_URL` | Chat API URL |
 | `CHAT_API_TOKEN` | Private Chat API bearer token |
 | `PORT` | Health endpoint port |
