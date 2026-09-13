@@ -758,6 +758,16 @@ async function main() {
 		server.close();
 	});
 
+	await test("loader: loadAll is idempotent (no duplicate commands/events)", () => {
+		const reg = createRegistry();
+		const first = loadAll(reg);
+		assert.ok(first.commandCount > 0, "expected commands to load");
+		const firstEvents = reg.events.length;
+		const second = loadAll(reg);
+		assert.strictEqual(second.commandCount, first.commandCount, "command count must not change on reload");
+		assert.strictEqual(reg.events.length, firstEvents, "events must not duplicate on reload");
+	});
+
 	/* ── summary ── */
 	const failed = results.filter(r => !r.ok);
 	for (const r of results)

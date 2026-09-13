@@ -105,11 +105,13 @@ function createBot(config) {
 
 	let dispatcher = null;
 
-	function startServer() {
+	function loadCommands() {
 		const { commandCount, eventCount } = loadAll(registry);
 		state.commandCount = commandCount;
 		state.eventCount = eventCount;
+	}
 
+	function startServer() {
 		let login, mode;
 		try {
 			({ login, mode } = resolveLogin(config));
@@ -264,6 +266,9 @@ function createBot(config) {
 
 	async function start() {
 		log.master("BOOT", `${config.botName} starting…`);
+		// Load commands/events once, before connecting. Re-running this on every
+		// retry would duplicate entries and drop the count to zero.
+		loadCommands();
 		// Retry the initial connection instead of exiting: the server may not have
 		// cookies yet (or may be cold-starting on a free tier). A fatal exit here
 		// would fail the deploy and also stop the bot from recovering on its own.
