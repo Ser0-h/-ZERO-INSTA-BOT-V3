@@ -151,6 +151,38 @@ function isNumericID(value) {
 	return value != null && String(value).length > 0 && !Number.isNaN(Number(value));
 }
 
+/**
+ * Resolve a target user id from command arguments, in order: a reply, an
+ * explicit numeric id, or an @handle (looked up on Instagram). Instagram
+ * events do not carry a parsed mentions list, so a mention arrives as the
+ * literal "@handle" text.
+ *
+ * Returns `{ id }` on success, else `{ id: null, username? }` where username
+ * is set when an @handle was given but could not be found.
+ */
+async function resolveUserTarget(args, event, api) {
+	if (event && event.messageReply && event.messageReply.senderID)
+		return { id: String(event.messageReply.senderID), source: "reply" };
+
+	const numeric = (args || []).find(arg => /^\d+$/.test(arg));
+	if (numeric) return { id: String(numeric), source: "id" };
+
+	const handle = (args || []).find(arg => /^@[A-Za-z0-9._]{1,30}$/.test(arg));
+	if (handle) {
+		const username = handle.replace(/^@/, "");
+		try {
+			const info = await new Promise((resolve, reject) =>
+				api.getUserInfo(username, (error, result) => error ? reject(error) : resolve(result)));
+			const profile = info && Object.values(info)[0];
+			if (profile && profile.userID) return { id: String(profile.userID), source: "mention" };
+		}
+		catch (_) { }
+		return { id: null, username };
+	}
+
+	return { id: null };
+}
+
 module.exports = {
 	getType,
 	isStream,
@@ -164,5 +196,6 @@ module.exports = {
 	download,
 	randomString,
 	formatTime,
-	replaceArgs
+	replaceArgs,
+	resolveUserTarget
 };

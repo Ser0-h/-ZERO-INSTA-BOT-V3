@@ -50,6 +50,8 @@ module.exports = {
 	unbanSuccess: "Unbanned %1.",
 	whitelistAdded: "Added %1 to the whitelist.",
 	whitelistRemoved: "Removed %1 from the whitelist.",
+	addUserSuccess: "Added %1 to this thread.",
+	removeUserSuccess: "Removed %1 from this thread.",
 	echoEmpty: "Give me something to say.",
 	prefixCurrent: "The current prefix is: %1",
 	prefixChanged: "Prefix changed to: %1",

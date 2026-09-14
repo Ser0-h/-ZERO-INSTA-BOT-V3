@@ -218,7 +218,32 @@ function createDispatcher({ api, config, registry, database }) {
 		const entry = onReply.get(String(repliedID));
 		if (!entry) return false;
 		try {
-			await entry.handler({ api, message, event, args: event.body ? event.body.split(/\s+/) : [], usersData: database.users, threadsData: database.threads, userData, threadData, config, commandName: entry.commandName });
+			await entry.handler({
+				api,
+				message,
+				event,
+				args: event.body ? event.body.split(/\s+/) : [],
+				usersData: database.users,
+				threadsData: database.threads,
+				userData,
+				threadData,
+				config,
+				commandName: entry.commandName,
+				// A reply handler may arm a new handler so a conversation can keep
+				// threading (the AI command does this).
+				setReplyHandler(handler, messageID) {
+					const key = messageID != null ? messageID : event.messageID;
+					if (key == null) return handler;
+					onReply.set(String(key), { commandName: entry.commandName, handler });
+					return handler;
+				},
+				setReactionHandler(handler, messageID) {
+					const key = messageID != null ? messageID : event.messageID;
+					if (key == null) return handler;
+					onReaction.set(String(key), { commandName: entry.commandName, handler });
+					return handler;
+				}
+			});
 		}
 		catch (error) {
 			log.error("REPLY", `Error in reply handler for "${entry.commandName}"`, error);
@@ -230,7 +255,29 @@ function createDispatcher({ api, config, registry, database }) {
 		const entry = onReaction.get(String(event.messageID));
 		if (!entry) return false;
 		try {
-			await entry.handler({ api, message, event, usersData: database.users, threadsData: database.threads, userData, threadData, config, commandName: entry.commandName });
+			await entry.handler({
+				api,
+				message,
+				event,
+				usersData: database.users,
+				threadsData: database.threads,
+				userData,
+				threadData,
+				config,
+				commandName: entry.commandName,
+				setReplyHandler(handler, messageID) {
+					const key = messageID != null ? messageID : event.messageID;
+					if (key == null) return handler;
+					onReply.set(String(key), { commandName: entry.commandName, handler });
+					return handler;
+				},
+				setReactionHandler(handler, messageID) {
+					const key = messageID != null ? messageID : event.messageID;
+					if (key == null) return handler;
+					onReaction.set(String(key), { commandName: entry.commandName, handler });
+					return handler;
+				}
+			});
 		}
 		catch (error) {
 			log.error("REACTION", `Error in reaction handler for "${entry.commandName}"`, error);

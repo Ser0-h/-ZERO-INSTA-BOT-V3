@@ -66,6 +66,8 @@ function fakeApi(overrides = {}) {
 		sendTypingIndicator: () => () => { },
 		changeProfilePicture: (src, cb) => { calls.push({ method: "changeProfilePicture", src }); cb && cb(null, {}); },
 		changeBio: (b, cb) => { calls.push({ method: "changeBio", b }); cb && cb(null, {}); },
+		addUserToThread: (uid, threadID, cb) => { calls.push({ method: "addUserToThread", uid, threadID }); cb && cb(null, {}); },
+		removeUserFromThread: (uid, threadID, cb) => { calls.push({ method: "removeUserFromThread", uid, threadID }); cb && cb(null, {}); },
 		listenMqtt: () => () => { }
 	}, overrides);
 	return api;
@@ -558,6 +560,37 @@ async function main() {
 		assert.ok(/3/.test(out));
 	});
 
+	await test("eval: out(\"hi\") replies hi", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const out = await runCommand(`-eval out("hi")`, { api, db, config: makeConfig() });
+		assert.strictEqual(out, "hi");
+	});
+
+	await test("eval: output() stringifies objects and Map", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const obj = await runCommand(`-eval output({ a: 1, b: 2 })`, { api, db, config: makeConfig() });
+		assert.ok(/\"a\": 1/.test(obj), "expected pretty JSON");
+		const map = await runCommand(`-eval out(new Map([["k","v"]]))`, { api, db, config: makeConfig() });
+		assert.ok(/Map\(1\)/.test(map) && /\"k\": \"v\"/.test(map));
+	});
+
+	await test("eval: out() wins over the return value", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const out = await runCommand(`-eval out("first"); return "second";`, { api, db, config: makeConfig() });
+		assert.ok(/first/.test(out));
+		assert.ok(!/second/.test(out), "the return value should be suppressed once out() is used");
+	});
+
+	await test("eval: an error is reported", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const out = await runCommand("-eval throw new Error('boom')", { api, db, config: makeConfig() });
+		assert.ok(/boom/.test(out));
+	});
+
 	await test("shell: runs a command and returns stdout", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
@@ -1042,6 +1075,161 @@ async function main() {
 			message: { reply: () => { throw new Error("unsend must not reply"); } },
 			event: { threadID: "t1", messageID: "evt", messageReply: { messageID: "other", senderID: "99" } }
 		});
+	});
+
+	/* ── adduser / removeuser ── */
+	await test("adduser: registered with the NZ R author", () => {
+		const command = registry.resolve("adduser");
+		assert.ok(command, "adduser should be registered");
+		assert.strictEqual(command.config.author, "NZ R.");
+		assert.strictEqual(command.config.role, 2);
+	});
+
+	await test("adduser: adds a numeric id to the current thread", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const out = await runCommand("-adduser 555", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		assert.ok(api.calls.some(c => c.method === "addUserToThread" && c.uid === "555" && c.threadID === "t"));
+		assert.ok(/555/.test(out), "expected a confirmation");
+	});
+
+	await test("adduser: resolves an @mention through getUserInfo", async () => {
+		const api = fakeApi({ getUserInfo: (id, cb) => cb(null, { [id]: { userID: "777", name: "Mentioned" } }) });
+		const db = makeDatabase();
+		await runCommand("-adduser @someone", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		assert.ok(api.calls.some(c => c.method === "addUserToThread" && c.uid === "777"), "expected the resolved mention id");
+	});
+
+	await test("adduser: falls back to the replied user", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		await runCommand("-adduser", { api, db, config: makeConfig(), extraEvent: { isGroup: true, messageReply: { senderID: "321", messageID: "o" } } });
+		assert.ok(api.calls.some(c => c.method === "addUserToThread" && c.uid === "321"));
+	});
+
+	await test("adduser: refuses outside a group", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const out = await runCommand("-adduser 555", { api, db, config: makeConfig() });
+		assert.ok(/group/i.test(out));
+		assert.ok(!api.calls.some(c => c.method === "addUserToThread"));
+	});
+
+	await test("adduser: unknown mention reports it", async () => {
+		const api = fakeApi({ getUserInfo: (id, cb) => cb(null, {}) });
+		const db = makeDatabase();
+		const out = await runCommand("-adduser @ghost", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		assert.ok(/@ghost/.test(out));
+	});
+
+	await test("removeuser: registered with the NZ R author", () => {
+		const command = registry.resolve("removeuser");
+		assert.ok(command, "removeuser should be registered");
+		assert.strictEqual(command.config.author, "NZ R.");
+		assert.strictEqual(command.config.role, 2);
+	});
+
+	await test("removeuser: removes the replied user from the thread", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const out = await runCommand("-removeuser", { api, db, config: makeConfig(), extraEvent: { isGroup: true, messageReply: { senderID: "321", messageID: "o" } } });
+		assert.ok(api.calls.some(c => c.method === "removeUserFromThread" && c.uid === "321" && c.threadID === "t"));
+		assert.ok(/321/.test(out));
+	});
+
+	await test("removeuser: resolves an @mention and a numeric id", async () => {
+		const api = fakeApi({ getUserInfo: (id, cb) => cb(null, { [id]: { userID: "888" } }) });
+		const db = makeDatabase();
+		await runCommand("-removeuser @who", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		await runCommand("-removeuser 9999", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		assert.ok(api.calls.some(c => c.method === "removeUserFromThread" && c.uid === "888"));
+		assert.ok(api.calls.some(c => c.method === "removeUserFromThread" && c.uid === "9999"));
+	});
+
+	/* ── ai ── */
+	await test("ai: registered to NZ R with the ai alias", () => {
+		const command = registry.resolve("ai");
+		assert.ok(command, "ai should be registered");
+		assert.strictEqual(command.config.author, "NZ R.");
+		assert.strictEqual(command.config.category, "ai");
+		assert.strictEqual(registry.resolve("ritchi"), command);
+	});
+
+	await test("ai: empty input asks for a message", async () => {
+		const command = registry.resolve("ai");
+		const out = await command.onStart({
+			message: { reply: text => text },
+			args: [],
+			event: { senderID: "1", threadID: "t" },
+			config: makeConfig()
+		});
+		assert.ok(/online|send a message/i.test(out));
+	});
+
+	await test("ai: 'clear' resets the session memory", async () => {
+		const command = registry.resolve("ai");
+		command._internal.sessions.set("t:1", { history: [{ role: "user", content: "hi" }], lastActive: Date.now(), lastBotMessageID: null, lastBotAt: 0 });
+		const out = await command.onStart({
+			message: { reply: text => text },
+			args: ["clear"],
+			event: { senderID: "1", threadID: "t" },
+			config: makeConfig()
+		});
+		assert.ok(/cleared/i.test(out));
+		assert.ok(!command._internal.sessions.has("t:1"));
+	});
+
+	await test("ai: answers, remembers and arms a reply handler", async () => {
+		const command = registry.resolve("ai");
+		command._internal.sessions.delete("t:2");
+		const originalFetch = global.fetch;
+		global.fetch = async url => ({
+			ok: true,
+			json: async () => String(url).includes("kilwa-claude")
+				? { status: "success", reply: "Hey there!" }
+				: { status: "success", reply: "love" }
+		});
+		const replies = [];
+		let armed = null;
+		try {
+			await command.onStart({
+				message: { reply: text => { replies.push(text); return { messageID: "bot1" }; }, typing: () => () => { }, react: () => { } },
+				args: ["hello"],
+				event: { senderID: "2", threadID: "t" },
+				config: makeConfig(),
+				setReplyHandler: (handler, id) => { armed = { handler, id }; }
+			});
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+		assert.ok(replies.some(r => /Hey there!/.test(r)), "expected the AI reply");
+		const session = command._internal.sessions.get("t:2");
+		assert.strictEqual(session.history.length, 2, "expected the exchange to be remembered");
+		assert.strictEqual(armed && armed.id, "bot1", "expected a reply handler armed on the bot message");
+	});
+
+	await test("ai: reports a network failure without breaking memory", async () => {
+		const command = registry.resolve("ai");
+		command._internal.sessions.delete("t:3");
+		const originalFetch = global.fetch;
+		global.fetch = async () => ({ ok: false, status: 502 });
+		const replies = [];
+		try {
+			await command.onStart({
+				message: { reply: text => { replies.push(text); return {}; }, typing: () => () => { }, react: () => { } },
+				args: ["hello"],
+				event: { senderID: "3", threadID: "t" },
+				config: makeConfig(),
+				setReplyHandler: () => { }
+			});
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+		assert.ok(replies.some(r => /network/i.test(r)), "expected a friendly failure");
+		const session = command._internal.sessions.get("t:3");
+		assert.strictEqual(session.history.length, 0, "a failed turn must not be remembered");
 	});
 
 	/* ── help ── */

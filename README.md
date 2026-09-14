@@ -11,7 +11,7 @@ events, roles, cooldowns and pluggable custom commands.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-3ddc84)
-![Tests](https://img.shields.io/badge/tests-79%20passing-3ddc84)
+![Tests](https://img.shields.io/badge/tests-99%20passing-3ddc84)
 
 [![View](https://img.shields.io/badge/View-Insta--Bot-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot)
 [![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot/fork)
@@ -292,11 +292,14 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 | `effect` | `fx` | user | Power-up text effect |
 | `avatarfx` | `avfx`, `avatar-effect` | user | Avatar character effect |
 | `sing` | `music`, `song` | user | Search and send a music sticker |
+| `ai` | `ritchi`, `chatbot` | user | Conversational AI with memory; reply to continue |
 | `img` | `image`, `sendimg` | user | Send an image by URL |
 | `anisearch` | `anivid`, `animevid` | user | Send a random anime TikTok video |
 | `joke` | `dadjoke` | user | Random joke |
 | `admin` | `adminbot` | bot admin | Add / remove / list bot admins |
 | `ban` | `unban` | bot admin | Ban or unban a user |
+| `adduser` | `addtouser`, `addmember` | bot admin | Add a user to the current thread |
+| `removeuser` | `kick`, `removemember` | bot admin | Remove a user from the current thread |
 | `whitelist` | `wl` | bot admin | Manage the whitelist |
 | `prefix` | `setprefix` | bot admin | Change the prefix |
 | `avatar` | `setavatar`, `setavt` | bot admin | Change the bot avatar |
@@ -312,6 +315,9 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 -avatarfx laugh That was funny
 -sing blinding lights
 -sing 2              # send result #2 from the last search
+-ai tell me a short story    # reply to the answer to keep chatting
+-adduser @friend              # add a user to this group
+-removeuser 123456789         # remove a user (or reply to their message)
 ```
 
 ### No-prefix commands
@@ -319,8 +325,9 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 A few commands work **without** the prefix so you can never lock yourself out:
 
 - `prefix` — show the current prefix, or `prefix !` to change it.
-- The bot-admin commands (`admin`, `ban`, `prefix`, `whitelist`, `cmd`, `avatar`, `bio`, `eval`,
-  `shell`) also run without the prefix for **bot admins only**. Normal users still need the prefix.
+- The bot-admin commands (`admin`, `ban`, `adduser`, `removeuser`, `prefix`, `whitelist`, `cmd`,
+  `avatar`, `bio`, `eval`, `shell`) also run without the prefix for **bot admins only**. Normal users
+  still need the prefix.
 
 ```
 prefix            # -> "The current prefix is `-`."
@@ -525,7 +532,7 @@ InstaBOT/
 ## Testing
 
 ```bash
-npm test                      # 79 unit tests, no credentials needed
+npm test                      # 99 unit tests, no credentials needed
 node test/live-send.js <tid>  # sends real DMs through the configured server
 ```
 
@@ -552,6 +559,10 @@ result. It uses `config.server.url` + `config.server.token` when set, otherwise 
 - GitHub: [https://github.com/lazyneoaz](https://github.com/lazyneoaz)
 - Project: [InstaBOT](https://github.com/lazyneoaz/Insta-Bot)
 - Powered by: [`ig-chat-api`](https://github.com/lazyneoaz/ig-chat-api) and [`ig-chat-api-server`](https://github.com/lazyneoaz/ig-chat-api-server)
+
+**Contributors:**
+
+- **NZ R.** — `ai` (Ritchi), `adduser`, `removeuser`, and the Goatbot-V2-style `eval`.
 
 If you fork or reuse this project, please keep this credit and the MIT license intact.
 
