@@ -212,6 +212,20 @@ async function main() {
 		assert.strictEqual(api.calls[0].caption, "cap");
 	});
 
+	await test("message: a video caption is sent as a separate message", async () => {
+		// Instagram's video broadcast is media-only, so the caption must follow
+		// as its own message or it is lost.
+		const api = fakeApi();
+		const message = createMessageContext({ api, event: { threadID: "t", messageID: "evt" } });
+		await message.reply({ body: "anime edit", attachment: { _readableState: {}, path: "c.mp4" } });
+		const video = api.calls.find(c => c.method === "sendVideo");
+		const text = api.calls.find(c => c.method === "sendMessage");
+		assert.ok(video, "the video must be sent");
+		assert.ok(text, "the caption must be sent as a separate message");
+		assert.strictEqual(text.form.body, "anime edit");
+		assert.strictEqual(text.reply, "evt");
+	});
+
 	await test("message: unsend and react use the thread", async () => {
 		const api = fakeApi();
 		const message = createMessageContext({ api, event: { threadID: "t", messageID: "evt" } });

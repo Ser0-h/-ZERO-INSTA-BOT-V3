@@ -57,7 +57,15 @@ function createMessageContext({ api, event, log }) {
 					sendNext();
 				};
 				try {
-					if (kind === "video") return api.sendVideo(source, threadID, done);
+					// Instagram's video_attachment broadcast is media-only: captions
+					// are silently dropped. Send the clip, then the caption as its
+					// own plain message (the documented way to caption a video).
+					if (kind === "video") {
+						return api.sendVideo(source, threadID, (error, result) => {
+							if (error || !caption) return done(error, result);
+							api.sendMessage({ body: caption }, threadID, () => done(null, result), replyTarget);
+						});
+					}
 					if (kind === "audio") return api.sendAudio(source, threadID, done);
 					return api.sendImage(source, threadID, caption, done, current === 0 ? replyTarget : undefined);
 				}
