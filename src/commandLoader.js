@@ -98,7 +98,7 @@ function createRegistry() {
 	};
 }
 
-// Load every .js file from the built-in and user "custom" directories.
+// Load every .js file from the commands and events directories.
 // Idempotent: clears the registry first, so calling it again (e.g. after a
 // reconnect retry) reloads fresh instead of stacking duplicate entries.
 function loadAll(registry) {
@@ -109,22 +109,18 @@ function loadAll(registry) {
 	let commandCount = 0;
 	let eventCount = 0;
 
-	for (const dir of ["commands", "custom/commands"]) {
-		for (const entry of loadDirectory(dir, "command")) {
-			const error = registry.registerCommand(entry);
-			if (error) {
-				log.warn("LOADER", error);
-				continue;
-			}
-			commandCount++;
+	for (const entry of loadDirectory("commands", "command")) {
+		const error = registry.registerCommand(entry);
+		if (error) {
+			log.warn("LOADER", error);
+			continue;
 		}
+		commandCount++;
 	}
 
-	for (const dir of ["events", "custom/events"]) {
-		for (const entry of loadDirectory(dir, "event")) {
-			registry.events.push(entry.script);
-			eventCount++;
-		}
+	for (const entry of loadDirectory("events", "event")) {
+		registry.events.push(entry.script);
+		eventCount++;
 	}
 
 	log.success("LOADED", `commands: ${commandCount}, events: ${eventCount}`);

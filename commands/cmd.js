@@ -5,8 +5,8 @@ const path = require("path");
 const { loadDirectory, validate } = require("../src/commandLoader");
 
 const ROOT = path.resolve(__dirname, "..");
-const CUSTOM_COMMANDS = path.join(ROOT, "custom", "commands");
-const CUSTOM_EVENTS = path.join(ROOT, "custom", "events");
+const COMMANDS_DIR = path.join(ROOT, "commands");
+const EVENTS_DIR = path.join(ROOT, "events");
 
 const COMMAND_TEMPLATE = `module.exports = {
 	config: {
@@ -76,21 +76,16 @@ async function fetchText(url, timeout = 30000) {
 }
 
 function resolveFile(name, isEvent) {
-	const sub = isEvent ? "events" : "commands";
-	const dirs = isEvent ? ["custom/events", "events"] : ["custom/commands", "commands"];
+	const dir = isEvent ? EVENTS_DIR : COMMANDS_DIR;
 	const clean = String(name || "").trim();
 	if (!clean || /[^\w.-]/.test(clean)) return null;
 	const filename = clean.endsWith(".js") ? clean : clean + ".js";
-	for (const dir of dirs) {
-		const base = path.join(ROOT, dir);
-		const candidate = path.join(base, filename);
-		if (candidate.startsWith(base) && fs.existsSync(candidate)) return candidate;
-	}
-	return null;
+	const candidate = path.join(dir, filename);
+	return candidate.startsWith(dir) && fs.existsSync(candidate) ? candidate : null;
 }
 
 function targetDir(isEvent) {
-	return isEvent ? CUSTOM_EVENTS : CUSTOM_COMMANDS;
+	return isEvent ? EVENTS_DIR : COMMANDS_DIR;
 }
 
 function installFile(name, code, isEvent) {
@@ -167,7 +162,7 @@ module.exports = {
 		if (action === "loadall") {
 			const ok = [];
 			const fail = [];
-			for (const dir of ["commands", "custom/commands", "events", "custom/events"]) {
+			for (const dir of ["commands", "events"]) {
 				const isEvent = dir.includes("event");
 				for (const entry of loadDirectory(dir, isEvent ? "event" : "command")) {
 					try {
@@ -273,7 +268,7 @@ module.exports = {
 				const loaded = loadInto(registry, done.file, isEvent);
 				return message.reply(
 					`Installed "${loaded.name}" (${isEvent ? "event" : "command"}) from ${source || "code"} ` +
-					`to custom/${isEvent ? "events" : "commands"}/${fileName} and reloaded it live.`
+					`to ${isEvent ? "events" : "commands"}/${fileName} and reloaded it live.`
 				);
 			}
 			catch (error) {

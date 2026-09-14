@@ -286,7 +286,7 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 | `prefix` | `setprefix` | bot admin | Change the prefix |
 | `avatar` | `setavatar`, `setavt` | bot admin | Change the bot avatar |
 | `bio` | `setbio`, `biography` | bot admin | Change the bot bio |
-| `cmd` | `command` | bot admin | Load / unload / reload / list custom commands |
+| `cmd` | `command` | bot admin | Install / uninstall / load / reload / list commands |
 | `eval` | `ev`, `js` | bot admin | Evaluate JavaScript |
 | `shell` | `exec`, `sh`, `terminal` | bot admin | Run a shell command |
 
@@ -501,7 +501,6 @@ InstaBOT/
 │  └─ logger.js          colored console logger
 ├─ commands/             commands (drop your own .js files here)
 ├─ events/               event scripts (message, reaction, join, leave, …)
-├─ custom/               legacy location for extra commands/events (optional)
 ├─ languages/en.js       strings
 └─ test/                 unit tests + live send test
 ```

@@ -458,11 +458,11 @@ async function main() {
 			assert.ok(/Installed "zzztestcmd"/.test(out), "should report the install, got: " + out);
 			assert.ok(registry.resolve("zzztestcmd"), "the command must be live without restart");
 			const fs = require("fs");
-			assert.ok(fs.existsSync(require("path").join(__dirname, "..", "custom", "commands", fileName)), "the file must be written");
+			assert.ok(fs.existsSync(require("path").join(__dirname, "..", "commands", fileName)), "the file must be written");
 		}
 		finally {
 			registry.unregisterCommand("zzztestcmd");
-			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "custom", "commands", fileName)); } catch (_) { }
+			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "commands", fileName)); } catch (_) { }
 		}
 	});
 
@@ -481,7 +481,7 @@ async function main() {
 		}
 		finally {
 			registry.unregisterCommand("zzzreplycmd");
-			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "custom", "commands", fileName)); } catch (_) { }
+			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "commands", fileName)); } catch (_) { }
 		}
 	});
 
@@ -500,7 +500,7 @@ async function main() {
 		finally {
 			global.fetch = originalFetch;
 			registry.unregisterCommand("zzzurlcmd");
-			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "custom", "commands", fileName)); } catch (_) { }
+			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "commands", fileName)); } catch (_) { }
 		}
 	});
 
@@ -511,7 +511,7 @@ async function main() {
 		const fs = require("fs");
 		const fileName = "testuninstall_" + Date.now().toString(36) + ".js";
 		const code = 'module.exports = { config: { name: "zzzuninst", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("x") };';
-		const dest = path.join(__dirname, "..", "custom", "commands", fileName);
+		const dest = path.join(__dirname, "..", "commands", fileName);
 		try {
 			await runCommand(`-cmd install ${fileName} ${code}`, { api, db, config: makeConfig() });
 			assert.ok(fs.existsSync(dest), "file should exist after install");
