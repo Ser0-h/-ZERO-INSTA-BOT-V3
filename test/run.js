@@ -2064,6 +2064,65 @@ async function main() {
 		assert.strictEqual(server.enabled, false, "port 0 disables the server (pure worker mode)");
 	});
 
+	/* ── rate-limit vs not-found ── */
+	await test("isRateLimitError: recognises 429 and Instagram throttle wording", () => {
+		assert.strictEqual(utils.isRateLimitError({ error: "parseAndCheckLogin got status code: 429. Bailing out" }), true);
+		assert.strictEqual(utils.isRateLimitError(new Error("Too Many Requests")), true);
+		assert.strictEqual(utils.isRateLimitError({ message: "Please wait a few minutes before you try again." }), true);
+		assert.strictEqual(utils.isRateLimitError("We're sorry, but something went wrong. Please try again."), true);
+		assert.strictEqual(utils.isRateLimitError({ message: "Could not find @nobody." }), false);
+		assert.strictEqual(utils.isRateLimitError(null), false);
+	});
+
+	await test("resolveUserTarget: a throttled handle is flagged, not reported missing", async () => {
+		// The server answers getUserInfo with a 429; we must not then hammer the
+		// anonymous endpoint, and must signal rateLimited (not a bare miss).
+		let anonCalls = 0;
+		const download = utils.download;
+		utils.download = () => { anonCalls++; return Promise.resolve(Buffer.from("{}")); };
+		try {
+			const api = fakeApi({
+				getUserInfo: (id, cb) => cb(new Error("parseAndCheckLogin got status code: 429. Bailing out"))
+			});
+			const target = await utils.resolveUserTarget(["@arobrifat"], { threadID: "t", senderID: "1" }, api);
+			assert.strictEqual(target.id, null);
+			assert.strictEqual(target.username, "arobrifat");
+			assert.strictEqual(target.rateLimited, true);
+			assert.strictEqual(anonCalls, 0, "must not call the anonymous endpoint while throttled");
+		}
+		finally { utils.download = download; }
+	});
+
+	await test("resolveUserTarget: a genuine miss is not flagged as throttled", async () => {
+		const download = utils.download;
+		utils.download = () => Promise.resolve(Buffer.from(JSON.stringify({ data: { user: null } })));
+		try {
+			const api = fakeApi({
+				getUserInfo: (id, cb) => cb(new Error("Could not find @nobody."))
+			});
+			const target = await utils.resolveUserTarget(["@nobody"], { threadID: "t", senderID: "1" }, api);
+			assert.strictEqual(target.id, null);
+			assert.strictEqual(target.username, "nobody");
+			assert.strictEqual(!!target.rateLimited, false);
+		}
+		finally { utils.download = download; }
+	});
+
+	await test("uid: reports throttling instead of 'Could not find'", async () => {
+		const command = registry.resolve("uid");
+		const api = fakeApi({
+			getUserInfo: (id, cb) => cb(new Error("parseAndCheckLogin got status code: 429. Bailing out"))
+		});
+		const sent = [];
+		const message = { reply: text => { sent.push(String(text)); return Promise.resolve({}); } };
+		await command.onStart({
+			message, args: ["@arobrifat"], api,
+			event: { threadID: "t", senderID: "1", isGroup: false },
+			config: makeConfig()
+		});
+		assert.ok(/rate-limiting/i.test(sent[0]), "expected a rate-limit reply, got: " + sent[0]);
+	});
+
 	/* ── summary ── */
 	const failed = results.filter(r => !r.ok);
 	for (const r of results)
