@@ -161,6 +161,40 @@ async function main() {
 		assert.ok(typeof config.prefix === "string" && config.prefix.length > 0);
 	});
 
+	await test("config: account id is read from ds_user_id for session identity", () => {
+		// The server keys each session by the Instagram account id, so the bot
+		// identifies itself with its own ds_user_id. That is available from the
+		// cookies before login, which is what makes the handshake possible.
+		const { accountIdFromAccount } = require(path.join(root, "src/config"));
+		assert.strictEqual(typeof accountIdFromAccount, "function", "accountIdFromAccount must be exported");
+
+		// Every cookie shape must yield the same id.
+		const header = cookieHeaderToCookies("sessionid=a; ds_user_id=24268962575; csrftoken=x");
+		assert.strictEqual(header.find(c => c.key === "ds_user_id").value, "24268962575");
+
+		const netscape = netScapeToCookies(
+			"#HttpOnly_.instagram.com\tTRUE\t/\tTRUE\t1823895835\tds_user_id\t24268962575"
+		);
+		assert.strictEqual(netscape.find(c => c.key === "ds_user_id").value, "24268962575");
+
+		const json = normalizeCookies([{ name: "sessionid", value: "a" }, { name: "ds_user_id", value: "24268962575" }]);
+		assert.strictEqual(json.find(c => c.key === "ds_user_id").value, "24268962575");
+	});
+
+	await test("config: an explicit server.botId is not overwritten by the account id", () => {
+		const { loadConfig } = require(path.join(root, "src/config"));
+		const before = process.env.IG_BOT_ID;
+		process.env.IG_BOT_ID = "my-custom-session";
+		try {
+			const config = loadConfig();
+			assert.strictEqual(config.server.botId, "my-custom-session");
+		}
+		finally {
+			if (before === undefined) delete process.env.IG_BOT_ID;
+			else process.env.IG_BOT_ID = before;
+		}
+	});
+
 	await test("config: netscape file", () => {
 		const text = ".instagram.com\tTRUE\t/\tTRUE\t1735689600\tsessionid\tabc";
 		assert.ok(isNetScapeCookie(text));
