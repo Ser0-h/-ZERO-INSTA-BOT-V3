@@ -1210,15 +1210,19 @@ async function main() {
 	});
 
 	/* ── multi-bot: bot id plumbing ── */
-	await test("auth: adopts the server id and scopes later calls by it", async () => {
-		// The bot is never configured with an id. It posts its cookies, the
-		// server replies with the session id it assigned, and the bot uses that
-		// id for the event stream and every later call.
+	await test("auth: adopts the server id and session secret, then sends both", async () => {
+		// The bot is never configured with an id or secret. It posts its cookies,
+		// the server replies with the session id and a per-session secret, and
+		// the bot uses both for the event stream and every later call.
 		const auth = require(path.join(root, "auth"));
 		const http = require("http");
 		const seen = [];
 		const server = http.createServer((req, res) => {
-			seen.push({ url: req.url, botId: req.headers["x-bot-id"] });
+			seen.push({
+				url: req.url,
+				botId: req.headers["x-bot-id"],
+				sessionToken: req.headers["x-session-token"]
+			});
 			if (req.url.startsWith("/events")) {
 				res.writeHead(200, { "Content-Type": "text/event-stream" });
 				res.write("retry: 3000\n\n");
@@ -1229,8 +1233,9 @@ async function main() {
 			req.on("end", () => {
 				res.writeHead(200, { "Content-Type": "application/json" });
 				if (req.url === "/cookies") {
-					// The server derives the session id from the pushed cookies.
-					return res.end(JSON.stringify({ ok: true, result: { botId: "24268962575", accepted: true } }));
+					// The server derives the id from the pushed cookies and mints a
+					// secret that scopes this bot to its own session.
+					return res.end(JSON.stringify({ ok: true, result: { botId: "24268962575", sessionToken: "s3cret", accepted: true } }));
 				}
 				res.end(JSON.stringify({ ok: true, result: "123" }));
 			});
@@ -1245,17 +1250,19 @@ async function main() {
 			stream = api.listenMqtt(() => { });
 			await new Promise(r => setTimeout(r, 150));
 
-			// The first cookie push must NOT claim an id of its own.
+			// The first cookie push must NOT claim an id or secret of its own.
 			const push = seen.find(s => s.url === "/cookies");
 			assert.ok(push, "expected a /cookies push");
 			assert.strictEqual(push.botId, undefined, "the cookie push must not send X-Bot-Id");
+			assert.strictEqual(push.sessionToken, undefined, "the cookie push must not send X-Session-Token");
 
 			const rpc = seen.find(s => s.url === "/rpc");
 			assert.strictEqual(rpc.botId, "24268962575", "rpc must carry the adopted id");
+			assert.strictEqual(rpc.sessionToken, "s3cret", "rpc must carry the adopted session secret");
 			const events = seen.find(s => s.url.startsWith("/events"));
 			assert.ok(events, "expected an /events request");
 			assert.strictEqual(events.botId, "24268962575", "events must carry the adopted id");
-			assert.ok(/botId=24268962575/.test(events.url), "events URL must scope the adopted id");
+			assert.strictEqual(events.sessionToken, "s3cret", "events must carry the session secret");
 		}
 		finally {
 			if (stream) stream();
