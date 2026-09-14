@@ -214,6 +214,17 @@ function saveUsernameCache() {
 	catch (_) { }
 }
 
+/** Find a cached handle for a numeric user id (reverse of the handle cache). */
+function cachedHandleForID(userID) {
+	const wanted = String(userID || "");
+	if (!wanted) return null;
+	const cache = loadUsernameCache();
+	for (const [handle, profile] of Object.entries(cache)) {
+		if (profile && String(profile.userID) === wanted) return handle;
+	}
+	return null;
+}
+
 async function fetchInstagramProfile(username, timeout = 15000) {
 	const handle = instagramUsername(username) || (username ? String(username).replace(/^@/, "") : null);
 	if (!handle) return null;
@@ -315,7 +326,25 @@ async function resolveUserTarget(args, event, api) {
 				const profile = info && Object.values(info)[0];
 				// Carry the fetched profile out so resolveProfile does not repeat
 				// the same lookup (each call is a round trip that can be throttled).
-				if (profile && profile.userID) return { id: String(profile.userID), source: "mention", profile };
+				if (profile && profile.userID) {
+					// Remember the handle->id pair so a later numeric-id lookup for
+					// this account can recover the handle and use the public
+					// endpoint when getUserInfo is throttled.
+					const cache = loadUsernameCache();
+					cache[username.toLowerCase()] = {
+						userID: String(profile.userID),
+						username: profile.vanity || profile.username || username,
+						name: profile.name || profile.firstName || null,
+						biography: profile.biography || "",
+						followers: profile.followerCount,
+						following: profile.followingCount,
+						isPrivate: profile.isPrivate,
+						isVerified: profile.isVerified,
+						profilePicture: profile.profilePicture || profile.thumbSrc || null
+					};
+					saveUsernameCache();
+					return { id: String(profile.userID), source: "mention", profile };
+				}
 			}
 			catch (error) {
 				if (isRateLimitError(error)) rateLimited = true;
@@ -367,40 +396,68 @@ async function resolveProfile(args, event, api) {
 	}
 
 	let rateLimited = false;
+	let authenticated = null;
 	// The authenticated session is the reliable source of truth for a numeric
 	// id (and is not rate limited like the public endpoint).
+	const lookupAuthed = () => new Promise((resolve, reject) =>
+		api.getUserInfo(String(target.id), (error, result) => error ? reject(error) : resolve(result)));
 	if (api) {
-		try {
-			const info = await new Promise((resolve, reject) =>
-				api.getUserInfo(String(target.id), (error, result) => error ? reject(error) : resolve(result)));
-			const profile = info && Object.values(info)[0];
-			if (profile) {
-				return {
-					userID: String(profile.userID || target.id),
-					username: profile.vanity || null,
-					name: profile.name || profile.firstName || null,
-					biography: profile.biography || "",
-					followers: profile.followerCount,
-					following: profile.followingCount,
-					posts: undefined,
-					isPrivate: profile.isPrivate,
-					isVerified: profile.isVerified,
-					profilePicture: profile.profilePicture || profile.thumbSrc || null
-				};
+		for (let attempt = 0; attempt < 2 && !authenticated; attempt++) {
+			try {
+				const info = await lookupAuthed();
+				const profile = info && Object.values(info)[0];
+				if (profile) {
+					authenticated = {
+						userID: String(profile.userID || target.id),
+						username: profile.vanity || profile.username || null,
+						name: profile.name || profile.firstName || null,
+						biography: profile.biography || "",
+						followers: profile.followerCount,
+						following: profile.followingCount,
+						posts: undefined,
+						isPrivate: profile.isPrivate,
+						isVerified: profile.isVerified,
+						profilePicture: profile.profilePicture || profile.thumbSrc || null
+					};
+				}
 			}
-		}
-		catch (error) {
-			if (isRateLimitError(error)) rateLimited = true;
+			catch (error) {
+				if (isRateLimitError(error)) {
+					rateLimited = true;
+					// Throttles are usually momentary: one short retry recovers
+					// most of them without surfacing an empty profile to the user.
+					if (attempt === 0) await new Promise(r => setTimeout(r, 1200));
+				}
+			}
 		}
 	}
 
-	// Fall back to the public profile (also covers handle-only lookups).
-	const raw = (args || []).find(arg => instagramUsername(arg) || /^@?[A-Za-z0-9._]{1,30}$/.test(arg) && !/^\d+$/.test(arg));
-	const username = raw ? (instagramUsername(raw) || raw.replace(/^@/, "")) : null;
-	if (target.source === "mention" && username) {
-		const profile = await fetchInstagramProfile(username);
-		if (profile) return profile;
+	// Instagram throttles `getUserInfo` in bursts, and even a 200 can omit the
+	// social counts. The public profile fills the gaps, so `info` never reports
+	// an empty follower/following/bio for a real account. It is only trusted
+	// when it resolves to the SAME user id: a handle can collide with an
+	// unrelated account, and overwriting a correct id with the wrong profile is
+	// worse than a missing follower count.
+	const incomplete = (p) => !p || p.followers == null || p.following == null || !p.biography;
+	if (incomplete(authenticated)) {
+		const raw = (args || []).find(arg => instagramUsername(arg) || /^@?[A-Za-z0-9._]{1,30}$/.test(arg) && !/^\d+$/.test(arg));
+		const handle = (raw && (instagramUsername(raw) || raw.replace(/^@/, ""))) ||
+			(authenticated && authenticated.username) ||
+			// A reply/numeric id has no handle in args; the cache may already know
+			// which handle owns this id, letting the public endpoint fill the gaps.
+			cachedHandleForID(target.id) || null;
+		if (handle) {
+			const publicProfile = await fetchInstagramProfile(handle);
+			const sameUser = publicProfile && String(publicProfile.userID) === String(target.id);
+			if (publicProfile && (!authenticated || sameUser)) {
+				// With no authenticated data the public profile is the best we
+				// have (it carries the id from the same lookup). With an
+				// authenticated profile, only merge when the ids agree.
+				return authenticated ? Object.assign({ }, authenticated, publicProfile) : publicProfile;
+			}
+		}
 	}
+	if (authenticated) return authenticated;
 
 	const result = { userID: String(target.id) };
 	if (rateLimited) result.rateLimited = true;
