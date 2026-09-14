@@ -337,19 +337,29 @@ async function main() {
 		assert.deepStrictEqual(methods, ["sendImage", "sendAudio", "sendVideo"]);
 	});
 
-	await test("message: an image caption is sent as a separate message", async () => {
-		// photo_attachment is media-only, so the caption follows as its own
-		// message or it is silently dropped.
+	await test("message: a caption is sent BEFORE its image", async () => {
+		// Media broadcasts are media-only, so the caption is its own message.
+		// It must come FIRST, so the text reads above the picture in the chat.
 		const api = fakeApi();
 		const message = createMessageContext({ api, event: { threadID: "t", messageID: "evt" } });
 		await message.reply({ body: "a picture", attachment: { _readableState: {}, path: "a.png" } });
-		const image = api.calls.find(c => c.method === "sendImage");
-		const text = api.calls.find(c => c.method === "sendMessage");
-		assert.ok(image, "the image must be sent");
+		const textAt = api.calls.findIndex(c => c.method === "sendMessage");
+		const imgAt = api.calls.findIndex(c => c.method === "sendImage");
+		assert.ok(textAt > -1 && imgAt > -1, "both the text and the image must be sent");
+		assert.ok(textAt < imgAt, "the caption must precede the image");
+		const image = api.calls[imgAt];
 		assert.strictEqual(image.caption, "");
-		assert.ok(text, "the caption must be sent as a separate message");
-		assert.strictEqual(text.form.body, "a picture");
-		assert.strictEqual(text.reply, "evt");
+		assert.strictEqual(api.calls[textAt].form.body, "a picture");
+		assert.strictEqual(api.calls[textAt].reply, "evt");
+	});
+
+	await test("message: textFirst false sends the media first", async () => {
+		const api = fakeApi();
+		const message = createMessageContext({ api, event: { threadID: "t", messageID: "evt" } });
+		await message.reply({ body: "after", attachment: { _readableState: {}, path: "a.png" }, textFirst: false });
+		const textAt = api.calls.findIndex(c => c.method === "sendMessage");
+		const imgAt = api.calls.findIndex(c => c.method === "sendImage");
+		assert.ok(textAt > imgAt, "textFirst:false must keep the media first");
 	});
 
 	await test("message: a video caption is sent as a separate message", async () => {
