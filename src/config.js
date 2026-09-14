@@ -62,12 +62,14 @@ function loadConfig() {
 	config.env.token = config.env.token || process.env.INSTABOT_TOKEN || "";
 	config.env.url = config.env.url || process.env.INSTABOT_URL || "";
 
-	// Music: blank apiUrl means "use Instagram's own catalogue". Never fall back
-	// to env.url — that is not a music server.
+	// Music: blank apiUrl means "use Instagram's own catalogue". NEVER fall back
+	// to env.url — that is not a music server, and a host like Render/Railway
+	// that sets URL/INSTABOT_URL for its own service would make `sing` query the
+	// bot's own host and get a 404.
 	config.music = config.music || {};
 	config.music.enable = config.music.enable !== false;
-	config.music.apiUrl = config.music.apiUrl || config.env.url || "";
-	config.music.apiToken = config.music.apiToken || config.env.token || "";
+	config.music.apiUrl = config.music.apiUrl || "";
+	config.music.apiToken = config.music.apiToken || "";
 
 	// Private ig-chat-api server: config.json wins, then environment variables.
 	config.server = config.server || {};

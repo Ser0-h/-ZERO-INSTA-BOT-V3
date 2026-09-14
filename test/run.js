@@ -400,6 +400,22 @@ async function main() {
 		assert.ok(api.calls.some(c => c.method === "sendMusic" && c.track.audioClusterID === "999"));
 	});
 
+	await test("sing: falls back to Instagram search when the music server 404s", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const originalFetch = global.fetch;
+		global.fetch = async () => ({ ok: false, status: 404 });
+		try {
+			const config = makeConfig({ music: { enable: true, apiUrl: "https://music.example/search", apiToken: "" } });
+			const out = await runCommand("-sing server down", { api, db, config });
+			assert.ok(!/music server responded/.test(out), "a dead music server must not surface an error");
+			assert.ok(api.calls.some(c => c.method === "musicSearch" && c.query === "server down"), "expected the Instagram fallback");
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+	});
+
 	await test("avatarfx: rejects an unknown effect", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
@@ -806,6 +822,22 @@ async function main() {
 		const { loadConfig } = require(path.join(root, "src/config"));
 		const config = loadConfig();
 		assert.strictEqual(config.server.botId, "default");
+	});
+
+	await test("config: a blank music.apiUrl never falls back to env.url", () => {
+		// Regression: a host that sets INSTABOT_URL to its own service URL made
+		// `sing` query the bot's own host and get a 404.
+		const { loadConfig } = require(path.join(root, "src/config"));
+		const previous = process.env.INSTABOT_URL;
+		process.env.INSTABOT_URL = "https://the-bot-itself.onrender.com";
+		try {
+			const config = loadConfig();
+			assert.strictEqual(config.music.apiUrl, "", "blank music.apiUrl must stay blank");
+		}
+		finally {
+			if (previous === undefined) delete process.env.INSTABOT_URL;
+			else process.env.INSTABOT_URL = previous;
+		}
 	});
 
 	/* ── anisearch ── */

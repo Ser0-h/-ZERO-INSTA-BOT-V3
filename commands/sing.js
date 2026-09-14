@@ -10,20 +10,28 @@ function formatDuration(ms) {
 
 async function searchTracks(query, message, config) {
 	const music = (config && config.music) || { };
+
+	async function fromInstagram() {
+		const result = await message.musicSearch(query);
+		return (result && result.tracks) || [];
+	}
+
 	if (music.enable !== false && music.apiUrl) {
 		const url = music.apiUrl.includes("{query}")
 			? music.apiUrl.replace("{query}", encodeURIComponent(query))
 			: `${music.apiUrl}${music.apiUrl.includes("?") ? "&" : "?"}query=${encodeURIComponent(query)}`;
 		const headers = { "Accept": "application/json" };
 		if (music.apiToken) headers["Authorization"] = `Bearer ${music.apiToken}`;
-		const res = await fetch(url, { headers });
-		if (!res.ok) throw new Error(`music server responded ${res.status}`);
-		const data = await res.json();
-		return normalizeTracks(data);
+		try {
+			const res = await fetch(url, { headers });
+			if (!res.ok) throw new Error(`music server responded ${res.status}`);
+			const tracks = normalizeTracks(await res.json());
+			if (tracks.length) return tracks;
+		}
+		catch (_) { }
 	}
 
-	const result = await message.musicSearch(query);
-	return (result && result.tracks) || [];
+	return fromInstagram();
 }
 
 function normalizeTracks(data) {
