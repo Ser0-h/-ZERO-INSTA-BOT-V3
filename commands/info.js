@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * info — show bot runtime information.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const utils = require("../src/utils");
 
 module.exports = {

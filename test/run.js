@@ -730,19 +730,25 @@ async function main() {
 				arrayBuffer: async () => new Uint8Array(1024).buffer
 			};
 		};
-		let sent = null;
-		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		const replies = [];
+		const reactions = [];
+		const message = {
+			reply: form => { replies.push(form); return Promise.resolve({ messageID: "x" }); },
+			react: emoji => { reactions.push(emoji); return Promise.resolve({}); }
+		};
 		try {
 			await command.onStart({ args: ["naruto"], message });
 		}
 		finally {
 			global.fetch = originalFetch;
 		}
-		assert.ok(sent, "expected a reply");
-		assert.strictEqual(sent.body, "Naruto edit");
-		assert.ok(Buffer.isBuffer(sent.attachment.buffer), "the video must be sent as bytes, not a URL");
-		assert.strictEqual(sent.attachment.buffer.length, 1024);
-		assert.strictEqual(sent.attachment.fileName, "anisearch.mp4", "mp4 extension hint must be attached");
+		assert.strictEqual(replies.length, 2, "a text then the video");
+		assert.strictEqual(String(replies[0]), "Naruto edit", "the title/caption goes first");
+		const video = replies[1];
+		assert.ok(Buffer.isBuffer(video.attachment.buffer), "the video must be sent as bytes, not a URL");
+		assert.strictEqual(video.attachment.buffer.length, 1024);
+		assert.strictEqual(video.attachment.fileName, "anisearch.mp4", "mp4 extension hint must be attached");
+		assert.deepStrictEqual(reactions, ["⏳", "✅"], "loading then success reactions");
 		assert.ok(seen.some(u => u.includes("/tik-sr?q=naruto")), "search endpoint hit");
 		assert.ok(seen.some(u => u.includes("/alldl?url=")), "download endpoint hit");
 		assert.ok(seen.some(u => u.includes("cdn.example/v.mp4")), "video fetched by the bot, not the server");
@@ -774,16 +780,20 @@ async function main() {
 				arrayBuffer: async () => new Uint8Array(size).buffer
 			};
 		};
-		let sent = null;
-		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		const replies = [];
+		const message = {
+			reply: form => { replies.push(form); return Promise.resolve({ messageID: "x" }); },
+			react: () => Promise.resolve({})
+		};
 		try {
 			await command.onStart({ args: ["naruto"], message });
 		}
 		finally {
 			global.fetch = originalFetch;
 		}
-		assert.ok(sent && Buffer.isBuffer(sent.attachment.buffer), "expected a video on the retry");
-		assert.strictEqual(sent.attachment.buffer.length, 2048);
+		const video = replies.find(r => r && r.attachment);
+		assert.ok(video && Buffer.isBuffer(video.attachment.buffer), "expected a video on the retry");
+		assert.strictEqual(video.attachment.buffer.length, 2048);
 		assert.strictEqual(downloadCount, 2, "the oversized first download must be retried");
 	});
 
@@ -803,7 +813,11 @@ async function main() {
 			throw new Error("Video download failed (HTTP 403)");
 		};
 		let sent = null;
-		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		const reactions = [];
+		const message = {
+			reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); },
+			react: emoji => { reactions.push(emoji); return Promise.resolve({}); }
+		};
 		try {
 			await command.onStart({ args: ["naruto"], message });
 		}
@@ -811,6 +825,7 @@ async function main() {
 			global.fetch = originalFetch;
 		}
 		assert.ok(/HTTP 403/.test(String(sent)), "the real reason must be shown, not a bare 'Error'");
+		assert.deepStrictEqual(reactions, ["⏳", "❌"], "loading then failure reactions");
 	});
 
 	await test("anisearch: no matches reports an error", async () => {
@@ -818,7 +833,11 @@ async function main() {
 		const originalFetch = global.fetch;
 		global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ results: [] }) });
 		let sent = null;
-		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		const reactions = [];
+		const message = {
+			reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); },
+			react: emoji => { reactions.push(emoji); return Promise.resolve({}); }
+		};
 		try {
 			await command.onStart({ args: ["nothing"], message });
 		}
@@ -826,6 +845,7 @@ async function main() {
 			global.fetch = originalFetch;
 		}
 		assert.ok(/Could not find a video/.test(String(sent)), "expected an error reply");
+		assert.deepStrictEqual(reactions, ["⏳", "❌"], "loading then failure reactions");
 	});
 
 	/* ── uptime ── */

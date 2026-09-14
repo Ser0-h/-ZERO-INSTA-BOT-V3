@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * bio — change the bot account's Instagram biography.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 
 module.exports = {

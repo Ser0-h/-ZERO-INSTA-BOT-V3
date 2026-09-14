@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * ban / unban — stop or allow a user from using the bot.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 
 function resolveTarget(args, event) {

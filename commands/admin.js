@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * admin — manage bot admins (add / remove / list).
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 const { saveConfig } = require("../src/config");
 

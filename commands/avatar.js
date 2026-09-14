@@ -1,11 +1,5 @@
 "use strict";
 
-/**
- * avatar — change the bot account's Instagram profile picture.
- * WARNING: this overwrites the current avatar and cannot be undone.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 
 module.exports = {
@@ -25,7 +19,6 @@ module.exports = {
 		const lang = config.language;
 		let source = args[0];
 
-		// Accept an image the user replied to, or attached to the command.
 		const fromReply = pickImage(event.messageReply && event.messageReply.attachments);
 		const fromSelf = pickImage(event.attachments);
 		if (!source) source = fromReply || fromSelf;
@@ -45,7 +38,6 @@ module.exports = {
 	}
 };
 
-/** Pull a usable image URL from an attachment list. */
 function pickImage(attachments) {
 	if (!Array.isArray(attachments)) return null;
 	for (const att of attachments) {

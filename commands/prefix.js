@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * prefix — show or change the command prefix.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 const { saveConfig } = require("../src/config");
 

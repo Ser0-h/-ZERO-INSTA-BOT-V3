@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * help — list commands or show details for one command.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 
 module.exports = {
@@ -47,7 +42,7 @@ module.exports = {
 			return message.reply(lines.join("\n"));
 		}
 
-		const byCategory = {};
+		const byCategory = { };
 		for (const command of registry.commands.values()) {
 			if (command.config.hidden) continue;
 			const category = command.config.category || "misc";

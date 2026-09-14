@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * avatarfx — send text with an animated avatar character effect.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const EFFECTS = {
 	love: ["love", "heart"],
 	angry: ["angry", "mad"],

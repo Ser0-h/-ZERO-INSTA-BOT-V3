@@ -1,11 +1,5 @@
 "use strict";
 
-/**
- * img — send an image from a URL, reply or the user's attachment.
- * Demonstrates media sending through message.reply.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 module.exports = {
 	config: {
 		name: "img",

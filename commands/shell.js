@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * shell — run a shell command on the bot host (bot admins only).
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const { exec } = require("child_process");
 
 function chunk(text, size = 1500) {
@@ -41,7 +36,7 @@ module.exports = {
 				try {
 					for (const piece of chunk(output)) await message.reply(piece);
 				}
-				catch (_) { /* ignore */ }
+				catch (_) { }
 				resolve();
 			});
 		});

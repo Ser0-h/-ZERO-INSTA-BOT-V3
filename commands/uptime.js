@@ -1,18 +1,11 @@
 "use strict";
 
-/**
- * uptime — show how long the bot has been running.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const utils = require("../src/utils");
 
-/** "2d 3h 4m 5s" from a millisecond duration. */
 function human(ms) {
 	return utils.formatTime(Math.max(0, Number(ms) || 0));
 }
 
-/** A short, readable local timestamp for when the bot started. */
 function startedAt(ms) {
 	const date = new Date(ms);
 	return date.toISOString().replace("T", " ").replace(/\..+$/, " UTC");

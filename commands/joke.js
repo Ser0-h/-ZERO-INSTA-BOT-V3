@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * joke — fetch a random joke from a public API.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 
 module.exports = {

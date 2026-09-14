@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * sing — search Instagram's music catalogue and attach a track as a music sticker.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 function formatDuration(ms) {
 	if (!ms || ms < 0) return "0:00";
 	const total = Math.round(ms / 1000);
@@ -13,12 +8,8 @@ function formatDuration(ms) {
 	return `${minutes}:${seconds}`;
 }
 
-/**
- * Search a custom music server when one is configured, otherwise fall back to
- * Instagram's own music catalogue.
- */
 async function searchTracks(query, message, config) {
-	const music = (config && config.music) || {};
+	const music = (config && config.music) || { };
 	if (music.enable !== false && music.apiUrl) {
 		const url = music.apiUrl.includes("{query}")
 			? music.apiUrl.replace("{query}", encodeURIComponent(query))
@@ -35,7 +26,6 @@ async function searchTracks(query, message, config) {
 	return (result && result.tracks) || [];
 }
 
-/** Accept { tracks }, { data }, { results } or a bare array from a music server. */
 function normalizeTracks(data) {
 	const list = Array.isArray(data) ? data
 		: Array.isArray(data && data.tracks) ? data.tracks
@@ -69,8 +59,7 @@ module.exports = {
 		if (!query)
 			return message.reply(`Usage: sing <song name>\nExample: sing blinding lights`);
 
-		// A bare number re-uses the previous search results for this user.
-		const last = usersData.get(event.senderID) || {};
+		const last = usersData.get(event.senderID) || { };
 		const cached = last.data && last.data.lastMusic;
 
 		if (/^\d+$/.test(query) && cached && Array.isArray(cached.tracks) && cached.tracks.length) {
@@ -93,7 +82,7 @@ module.exports = {
 			return message.reply(`No songs found for "${query}".`);
 
 		const top = tracks.slice(0, 10);
-		usersData.update(event.senderID, { data: Object.assign({}, last.data, { lastMusic: { query, tracks: top } }) });
+		usersData.update(event.senderID, { data: Object.assign({ }, last.data, { lastMusic: { query, tracks: top } }) });
 
 		if (top.length === 1 || args.includes("--top"))
 			return sendTrack(message, top[0]);
@@ -106,7 +95,7 @@ module.exports = {
 		);
 
 		if (typeof setReplyHandler === "function") {
-			// Arm the picker against the results message the user will reply to.
+
 			setReplyHandler(async ({ message: replyMessage, event: replyEvent }) => {
 				const pick = String(replyEvent.body || "").trim().split(/\s+/).pop();
 				if (!/^\d+$/.test(pick)) return;

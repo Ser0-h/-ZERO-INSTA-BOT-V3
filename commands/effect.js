@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * effect — send an animated "power-up" text effect.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 module.exports = {
 	config: {
 		name: "effect",

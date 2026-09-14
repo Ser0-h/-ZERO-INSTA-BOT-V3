@@ -1,15 +1,5 @@
 "use strict";
 
-/**
- * cmd — manage commands and events at runtime (GoatBot-style).
- *
- * Commands are plain .js files in commands/ (loaded on boot). Events live in
- * events/. Use this command to load/reload a file after editing without a
- * restart. A legacy custom/commands and custom/events location still works.
- *
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const fs = require("fs");
 const path = require("path");
 const { loadDirectory, validate } = require("../src/commandLoader");
@@ -61,8 +51,7 @@ function resolveFile(sub, name) {
 	const clean = String(name || "").trim();
 	if (!clean || /[^\w.-]/.test(clean)) return null;
 	const filename = clean.endsWith(".js") ? clean : clean + ".js";
-	// Commands/events live in the main folders. custom/* is checked first as a
-	// legacy location, then the main folder is used for new files.
+
 	const isEvent = sub.includes("event");
 	const dirs = isEvent ? ["custom/events", "events"] : ["custom/commands", "commands"];
 	for (const dir of dirs) {

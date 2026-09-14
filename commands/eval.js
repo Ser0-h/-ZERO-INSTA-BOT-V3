@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * eval — evaluate JavaScript in the bot process (bot admins only).
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const util = require("util");
 
 function chunk(text, size = 1500) {
@@ -37,7 +32,7 @@ module.exports = {
 
 		let output;
 		try {
-			// eslint-disable-next-line no-new-func
+
 			const fn = new Function("api", "event", "config", "registry", "database", "usersData", "threadsData", "message", "require", `"use strict"; return (async () => { ${code} })();`);
 			const result = await fn(api, event, config, registry, database, usersData, threadsData, message, require);
 			output = util.inspect(result, { depth: 2, colors: false, maxArrayLength: 50 });

@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * whitelist — restrict bot usage to a set of users/threads.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 const { saveConfig } = require("../src/config");
 

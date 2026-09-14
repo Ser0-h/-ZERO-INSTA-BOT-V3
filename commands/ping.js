@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * ping — check that the bot is alive and measure reply latency.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 
 module.exports = {

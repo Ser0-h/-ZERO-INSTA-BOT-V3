@@ -1,10 +1,5 @@
 "use strict";
 
-/**
- * echo — repeat the given text.
- * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
- */
-
 const t = require("../src/languages").text;
 
 module.exports = {
