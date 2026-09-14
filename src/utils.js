@@ -273,13 +273,26 @@ async function resolveInstagramUserID(username, timeout = 15000) {
 }
 
 /**
+ * True when an error from Instagram means "you are being throttled", not
+ * "this user does not exist". Instagram answers bursts with HTTP 429, and the
+ * generic "something went wrong / try again later" body. Reported to the user
+ * as a temporary condition so a lookup is never mistaken for a missing user.
+ */
+function isRateLimitError(error) {
+	const text = String(error && (error.error || error.message) || error);
+	return /\b429\b|too many requests|rate.?limit|please wait|try again later|something went wrong/i.test(text);
+}
+
+/**
  * Resolve a target user id from command arguments, in order: a reply, an
  * explicit numeric id, then a username — given as an @handle, a bare handle,
  * or an Instagram profile URL. Instagram events do not carry a parsed
  * mentions list, so a mention arrives as the literal "@handle" text.
  *
- * Returns `{ id }` on success, else `{ id: null, username? }` where username
- * is set when a handle was given but could not be found.
+ * Returns `{ id }` on success, else `{ id: null, username?, rateLimited? }`
+ * where username is set when a handle was given but could not be found, and
+ * rateLimited is set when Instagram throttled the lookup (so the caller can
+ * say "try again" rather than "not found").
  */
 async function resolveUserTarget(args, event, api) {
 	if (event && event.messageReply && event.messageReply.senderID)
@@ -291,6 +304,7 @@ async function resolveUserTarget(args, event, api) {
 	const raw = (args || []).find(arg => /^@?[A-Za-z0-9._]{1,30}$/.test(arg) || /instagram\.com\//i.test(arg));
 	const username = instagramUsername(raw) || (raw && /^@?[A-Za-z0-9._]{1,30}$/.test(raw) ? raw.replace(/^@/, "") : null);
 	if (username) {
+		let rateLimited = false;
 		// Prefer the authenticated session (uses the server's cookies, so it is
 		// not rate limited the way the anonymous endpoint is). Fall back to the
 		// public endpoint for servers that cannot resolve usernames.
@@ -301,11 +315,18 @@ async function resolveUserTarget(args, event, api) {
 				const profile = info && Object.values(info)[0];
 				if (profile && profile.userID) return { id: String(profile.userID), source: "mention" };
 			}
-			catch (_) { }
+			catch (error) {
+				if (isRateLimitError(error)) rateLimited = true;
+			}
 		}
-		const id = await resolveInstagramUserID(username);
-		if (id) return { id, source: "mention" };
-		return { id: null, username };
+		// Only try the anonymous endpoint when the authenticated session did not
+		// already tell us we are throttled. Hitting it while rate limited just
+		// deepens the throttle and returns nothing.
+		if (!rateLimited) {
+			const id = await resolveInstagramUserID(username);
+			if (id) return { id, source: "mention" };
+		}
+		return { id: null, username, rateLimited };
 	}
 
 	return { id: null };
@@ -316,11 +337,16 @@ async function resolveUserTarget(args, event, api) {
  * user id, or a username / @handle / profile URL. Returns a normalized profile
  * (`{ userID, username, name, biography, followers, following, posts,
  * isPrivate, isVerified, profilePicture }`), or null when nothing is found.
+ * Sets `rateLimited` on the returned object when Instagram throttled us, so a
+ * caller can distinguish "no such user" from "try again shortly".
  */
 async function resolveProfile(args, event, api) {
 	const target = await resolveUserTarget(args, event, api);
-	if (!target.id) return null;
+	if (!target.id) {
+		return target.rateLimited ? { rateLimited: true } : null;
+	}
 
+	let rateLimited = false;
 	// The authenticated session is the reliable source of truth for a numeric
 	// id (and is not rate limited like the public endpoint).
 	if (api) {
@@ -343,7 +369,9 @@ async function resolveProfile(args, event, api) {
 				};
 			}
 		}
-		catch (_) { }
+		catch (error) {
+			if (isRateLimitError(error)) rateLimited = true;
+		}
 	}
 
 	// Fall back to the public profile (also covers handle-only lookups).
@@ -354,7 +382,9 @@ async function resolveProfile(args, event, api) {
 		if (profile) return profile;
 	}
 
-	return { userID: String(target.id) };
+	const result = { userID: String(target.id) };
+	if (rateLimited) result.rateLimited = true;
+	return result;
 }
 
 module.exports = {
@@ -376,6 +406,7 @@ module.exports = {
 	resolveInstagramUserID,
 	resolveUserTarget,
 	resolveProfile,
+	isRateLimitError,
 	_resetUsernameCache() {
 		usernameCache = {};
 		try { fs.rmSync(USERNAME_CACHE_FILE, { force: true }); }

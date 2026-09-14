@@ -23,6 +23,8 @@ module.exports = {
 
 		const target = await resolveUserTarget(args, event, api);
 		if (!target.id) {
+			if (target.rateLimited)
+				return message.reply("Instagram is rate-limiting lookups right now. Please try again in a few minutes.");
 			if (target.username)
 				return message.reply(`Could not find @${target.username}.`);
 			return message.reply("Provide a numeric user id or @mention, or reply to a user's message.");

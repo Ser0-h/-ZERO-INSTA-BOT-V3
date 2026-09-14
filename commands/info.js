@@ -1,7 +1,6 @@
 "use strict";
 
 const { resolveUserTarget, resolveProfile } = require("../src/utils");
-
 function number(value) {
 	return value == null ? "—" : Number(value).toLocaleString("en-US");
 }
@@ -21,12 +20,15 @@ module.exports = {
 	onStart: async function ({ message, args, event, api }) {
 		const target = await resolveUserTarget(args, event, api);
 		if (!target.id) {
+			if (target.rateLimited) return message.reply("Instagram is rate-limiting lookups right now. Please try again in a few minutes.");
 			if (target.username) return message.reply(`Could not find @${target.username}.`);
 			return message.reply("Provide a numeric user id or @mention, or reply to a user's message.");
 		}
 
 		const profile = await resolveProfile(args, event, api);
 		if (!profile) return message.reply(`Could not find user ${target.id}.`);
+		if (profile.rateLimited && !profile.username && !profile.name)
+			return message.reply("Instagram is rate-limiting lookups right now. Please try again in a few minutes.");
 
 		const badges = [profile.isVerified ? "✅ Verified" : null, profile.isPrivate ? "🔒 Private" : "🌐 Public"]
 			.filter(Boolean).join(" · ");

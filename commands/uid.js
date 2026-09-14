@@ -18,6 +18,7 @@ module.exports = {
 		// Accepts a numeric id, @handle, bare username, profile URL, or a reply.
 		const target = await resolveUserTarget(args, event, api);
 		if (target.id) return message.reply(String(target.id));
+		if (target.rateLimited) return message.reply("Instagram is rate-limiting lookups right now. Please try again in a few minutes.");
 		if (target.username) return message.reply(`Could not find @${target.username}.`);
 		return message.reply(String(event.senderID));
 	}
