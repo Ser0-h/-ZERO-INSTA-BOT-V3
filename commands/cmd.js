@@ -50,6 +50,17 @@ function normalizeUrl(url) {
 	return u;
 }
 
+function fileNameFromUrl(url) {
+	try {
+		const pathname = new URL(url).pathname;
+		const name = path.basename(pathname);
+		return /^[\w.-]+\.js$/i.test(name) ? name : null;
+	}
+	catch (_) {
+		return null;
+	}
+}
+
 function isCodeLike(text) {
 	const t = String(text || "");
 	return /module\.exports|exports\.config|function\s*\(/.test(t) && /onStart|onEvent/.test(t);
@@ -222,6 +233,7 @@ module.exports = {
 			else if (urlArg) {
 				const url = normalizeUrl(urlArg);
 				if (!url) return message.reply("❌ Give a valid http(s) URL.");
+				if (!fileName) fileName = fileNameFromUrl(url);
 				try {
 					code = await fetchText(url);
 					source = url;
@@ -246,6 +258,9 @@ module.exports = {
 			if (!fileName) fileName = "custom_" + Date.now().toString(36) + ".js";
 			if (!fileName.endsWith(".js")) fileName += ".js";
 			if (!/^[\w.-]+\.js$/.test(fileName)) return message.reply("❌ Invalid file name.");
+			if (!isCodeLike(code)) {
+				return message.reply("❌ The downloaded file does not look like a valid InstaBOT command or event.");
+			}
 
 			const looksLikeEvent = /onEvent\s*[:(]/.test(code) && !/onStart/.test(code);
 			const isEvent = isEventFlag || looksLikeEvent;
@@ -258,6 +273,11 @@ module.exports = {
 			// looked like it did nothing at all. Installing by URL is an explicit
 			// request, so honour it and say what was replaced.
 			const existed = fs.existsSync(dest);
+			let previousCode = null;
+			if (existed) {
+				try { previousCode = fs.readFileSync(dest, "utf8"); }
+				catch (_) { previousCode = null; }
+			}
 			try {
 				const done = installFile(fileName, code, isEvent);
 				if (done.error) return message.reply(`❌ ${done.error}`);
@@ -268,6 +288,17 @@ module.exports = {
 				);
 			}
 			catch (error) {
+				// Do not leave a broken download in commands/. Restore the previous
+				// file and registry entry when a URL has missing dependencies or bad
+				// syntax, so the next command is not silently affected.
+				try {
+					if (previousCode != null) {
+						fs.writeFileSync(dest, previousCode, "utf8");
+						loadInto(registry, dest, isEvent);
+					}
+					else if (fs.existsSync(dest)) fs.unlinkSync(dest);
+				}
+				catch (_) { /* preserve the original install error */ }
 				return message.reply(`❌ Install failed: ${String(error.message || error)}`);
 			}
 		}

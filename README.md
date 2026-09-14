@@ -11,7 +11,7 @@ events, roles, cooldowns and pluggable custom commands.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-3ddc84)
-![Tests](https://img.shields.io/badge/tests-161%20passing-3ddc84)
+![Tests](https://img.shields.io/badge/tests-164%20passing-3ddc84)
 
 [![View](https://img.shields.io/badge/View-Insta--Bot-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot)
 [![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot/fork)
@@ -350,6 +350,7 @@ Both song commands read the same `music.apiUrl`:
 | `music` | `stickermusic`, `sm`, `m` | user | Search and send a song as an Instagram music sticker |
 | `sing` | — | user | Search and send the **full song** as audio |
 | `ai` | `ritchi`, `chatbot` | user | Conversational AI with memory; reply to continue |
+| `bby` | `baby`, `jan`, `suna` | user | Chat with bby and teach custom replies |
 | `img` | `image`, `sendimg` | user | Send an image by URL |
 | `anisearch` | `anivid`, `animevid` | user | Send a random anime TikTok video |
 | `joke` | `dadjoke` | user | Random joke |
@@ -375,6 +376,8 @@ Both song commands read the same `music.apiUrl`:
 -sing blinding lights       # search and send the FULL song as audio
 -sing 2                     # send full song #2 from the last search
 -ai tell me a short story    # reply to the answer to keep chatting
+-bby hello                  # chat with bby
+-bby teach hello - Hi there # teach a custom reply
 -adduser @friend              # add a user to this group
 -removeuser 123456789         # remove a user (or reply to their message)
 ```
@@ -427,7 +430,12 @@ InstaBOT/
 -cmd reload mycommand  # reload after editing
 -cmd unload mycommand  # remove it from the registry
 -cmd load myevent --event
+-cmd install https://raw.githubusercontent.com/owner/repo/main/command.js
 ```
+
+URL installs automatically use the filename from the URL. If a downloaded file
+cannot load, for example because it requires an unavailable dependency, the bot
+reports the error and removes the broken file instead of failing silently.
 
 A command module looks like this:
 
