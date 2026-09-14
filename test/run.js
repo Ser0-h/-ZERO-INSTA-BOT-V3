@@ -161,37 +161,52 @@ async function main() {
 		assert.ok(typeof config.prefix === "string" && config.prefix.length > 0);
 	});
 
-	await test("config: account id is read from ds_user_id for session identity", () => {
-		// The server keys each session by the Instagram account id, so the bot
-		// identifies itself with its own ds_user_id. That is available from the
-		// cookies before login, which is what makes the handshake possible.
-		const { accountIdFromAccount } = require(path.join(root, "src/config"));
-		assert.strictEqual(typeof accountIdFromAccount, "function", "accountIdFromAccount must be exported");
+	await test("config: there is no bot id to configure", () => {
+		// The server identifies each session by the account's Instagram id and
+		// tells the bot what it is; the bot must not carry a botId setting.
+		const { loadConfig, configPath } = require(path.join(root, "src/config"));
+		const config = loadConfig();
+		assert.strictEqual(config.server.botId, undefined, "server.botId must not exist");
 
-		// Every cookie shape must yield the same id.
-		const header = cookieHeaderToCookies("sessionid=a; ds_user_id=24268962575; csrftoken=x");
-		assert.strictEqual(header.find(c => c.key === "ds_user_id").value, "24268962575");
-
-		const netscape = netScapeToCookies(
-			"#HttpOnly_.instagram.com\tTRUE\t/\tTRUE\t1823895835\tds_user_id\t24268962575"
-		);
-		assert.strictEqual(netscape.find(c => c.key === "ds_user_id").value, "24268962575");
-
-		const json = normalizeCookies([{ name: "sessionid", value: "a" }, { name: "ds_user_id", value: "24268962575" }]);
-		assert.strictEqual(json.find(c => c.key === "ds_user_id").value, "24268962575");
-	});
-
-	await test("config: an explicit server.botId is not overwritten by the account id", () => {
-		const { loadConfig } = require(path.join(root, "src/config"));
 		const before = process.env.IG_BOT_ID;
-		process.env.IG_BOT_ID = "my-custom-session";
+		process.env.IG_BOT_ID = "should-be-ignored";
 		try {
-			const config = loadConfig();
-			assert.strictEqual(config.server.botId, "my-custom-session");
+			assert.strictEqual(loadConfig().server.botId, undefined, "IG_BOT_ID must not resurrect botId");
 		}
 		finally {
 			if (before === undefined) delete process.env.IG_BOT_ID;
 			else process.env.IG_BOT_ID = before;
+		}
+	});
+
+	await test("bot: adopts the session id the server assigns (not a configured one)", async () => {
+		// The bot starts with no id, posts its cookies, and adopts result.botId.
+		const { pushCookies } = require(path.join(root, "auth.js"));
+		assert.strictEqual(typeof pushCookies, "function", "pushCookies must be exported");
+
+		const http = require("http");
+		const original = http.request;
+		http.request = (options, cb) => {
+			const res = {
+				statusCode: 200,
+				on(event, handler) {
+					if (event === "data") handler(Buffer.from(JSON.stringify({ ok: true, result: { botId: "24268962575", accepted: true } })));
+					if (event === "end") handler();
+					return this;
+				}
+			};
+			if (cb) cb(res);
+			return { on() { return this; }, write() { }, end() { }, destroy() { } };
+		};
+		try {
+			const outcome = await pushCookies(
+				{ base: new URL("http://127.0.0.1:9999"), token: "t", botId: "" },
+				"sessionid=a; ds_user_id=24268962575"
+			);
+			assert.strictEqual(outcome.botId, "24268962575", "the server-assigned id must be returned");
+		}
+		finally {
+			http.request = original;
 		}
 	});
 
@@ -1131,10 +1146,10 @@ async function main() {
 		finally { server.close(); }
 	});
 
-	await test("config: server.botId defaults to 'default'", () => {
+	await test("config: server has no botId (the server assigns the session id)", () => {
 		const { loadConfig } = require(path.join(root, "src/config"));
 		const config = loadConfig();
-		assert.strictEqual(config.server.botId, "default");
+		assert.strictEqual("botId" in config.server, false, "config.server must not carry a botId");
 	});
 
 	await test("config: a blank music.apiUrl never falls back to env.url", () => {
