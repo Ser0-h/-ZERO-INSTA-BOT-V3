@@ -357,7 +357,7 @@ function createDispatcher({ api, config, registry, database }) {
 		threadData.isGroup = group.isGroup;
 		if (group.known) threadData.groupKnown = true;
 
-		const message = createMessageContext({ api, event, log, config });
+		const message = createMessageContext({ api, event, log });
 
 		switch (event.type) {
 			case "message":

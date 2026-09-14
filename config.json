@@ -31,13 +31,6 @@
 	},
 	"antiInbox": false,
 	"noPrefix": false,
-	"avatarEffects": {
-		"stickers": {
-			"340282366841710301281153722859304413646": "1008287245559346",
-			"340282366841710301281153738777209320686": "1994444894604654"
-		},
-		"notes": "Avatar (animated character) effects send an avatar sticker id as attachment_fbid. Instagram scopes that sticker to the CONVERSATION: one id works for all four effects (love/angry/laugh/cry) inside its own thread and is refused with 403 error_code 1545003 in any other, so there is no universal id. Map each thread id to its sticker id here. Learn a thread's id by sending any one avatar effect there from the app and reading attachment_fbid from the captured request; add it under that thread id and all four effects work there. Threads without an entry use the server's built-in default, which works in the thread it was captured in. No code change needed."
-	},
 	"welcome": {
 		"enable": true,
 		"message": "Welcome %1 to %2! 👋",
