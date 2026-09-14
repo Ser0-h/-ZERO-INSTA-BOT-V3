@@ -56,21 +56,28 @@ function normalizeTracks(data) {
 	return rows;
 }
 
-async function searchSongs(query, config) {
+async function searchSongs(query, message, config) {
 	const music = (config && config.music) || { };
-	if (music.enable === false || !music.apiUrl)
-		throw new Error("Full-song playback needs a music API. Set music.apiUrl in config.json.");
 
-	const url = music.apiUrl.includes("{query}")
-		? music.apiUrl.replace("{query}", encodeURIComponent(query))
-		: `${music.apiUrl}${music.apiUrl.includes("?") ? "&" : "?"}query=${encodeURIComponent(query)}`;
-	const headers = { "Accept": "application/json" };
-	if (music.apiToken) headers["Authorization"] = `Bearer ${music.apiToken}`;
+	// Prefer a configured full-song server. Blank apiUrl falls through to
+	// Instagram's own music catalogue, whose tracks carry a full-length
+	// progressive audio URL.
+	if (music.enable !== false && music.apiUrl) {
+		const url = music.apiUrl.includes("{query}")
+			? music.apiUrl.replace("{query}", encodeURIComponent(query))
+			: `${music.apiUrl}${music.apiUrl.includes("?") ? "&" : "?"}query=${encodeURIComponent(query)}`;
+		const headers = { "Accept": "application/json" };
+		if (music.apiToken) headers["Authorization"] = `Bearer ${music.apiToken}`;
+		const res = await fetch(url, { headers });
+		if (!res.ok) throw new Error(`music server responded ${res.status}`);
+		const tracks = normalizeTracks(await res.json());
+		if (tracks.length) return tracks;
+	}
 
-	const res = await fetch(url, { headers });
-	if (!res.ok) throw new Error(`music server responded ${res.status}`);
-	const tracks = normalizeTracks(await res.json());
-	if (!tracks.length) throw new Error("the music server returned no playable songs");
+	const result = await message.musicSearch(query);
+	const tracks = normalizeTracks(result || { });
+	if (!tracks.length)
+		throw new Error("no full songs found (Instagram returned no audio URL)");
 	return tracks;
 }
 
@@ -78,9 +85,12 @@ async function sendSong(message, track) {
 	if (!track || !track.url)
 		return message.reply("That song is no longer available. Search again.");
 	try {
+		// Instagram's full-song file is an audio-only MP4. Tag the source with an
+		// audio MIME so it is routed to sendAudio, not sendVideo (the extension
+		// alone would misclassify it).
 		await message.send({
 			body: `${track.title || "Unknown"} — ${track.artist || "Unknown"}${track.durationMs ? ` (${formatDuration(track.durationMs)})` : ""}`,
-			attachment: track.url
+			attachment: { url: track.url, mimetype: track.mimetype || "audio/mp4" }
 		});
 	}
 	catch (error) {
@@ -118,7 +128,7 @@ module.exports = {
 
 		let tracks;
 		try {
-			tracks = await searchSongs(query, config);
+			tracks = await searchSongs(query, message, config);
 		}
 		catch (error) {
 			return message.reply(`Song search failed: ${String(error.message || error)}`);

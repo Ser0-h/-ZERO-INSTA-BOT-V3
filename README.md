@@ -325,10 +325,12 @@ Both song commands read the same `music.apiUrl`:
 
 - **`music`** (`stickermusic`, `sm`, `m`) attaches a 20-30s **Instagram music sticker** and needs the
   IG audio cluster/asset id fields (`audioClusterID` / `audioAssetID`).
-- **`sing`** streams the **full song** as an audio attachment. It needs a downloadable URL on each
-  result, under any common key: `url`, `downloadUrl`, `audioUrl`, `previewUrl`, `streamUrl`, `link`,
-  `src` (or a nested object with a `url`/`src`). The server converts the audio to the `.m4a` format
-  Instagram accepts, so the API may return MP3, M4A or AAC.
+- **`sing`** streams the **full song** as an audio attachment. With `apiUrl` blank it uses
+  **Instagram's own music catalogue**, which already returns a full-length audio URL
+  (`progressive_download_url`) — so `sing` works with no configuration. A custom server is optional
+  and needs a downloadable URL on each result under any common key (`url`, `downloadUrl`,
+  `audioUrl`, `previewUrl`, `streamUrl`, `link`, `src`, or a nested `url`/`src`). The server converts
+  the audio to the format Instagram accepts, so the API may return MP3, M4A or AAC.
 
 ---
 
