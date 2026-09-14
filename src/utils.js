@@ -7,6 +7,8 @@
 
 const https = require("https");
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const { URL } = require("url");
 
 const MIME_EXT = {
@@ -183,13 +185,44 @@ function instagramUsername(input) {
 }
 
 /**
- * Resolve a username to an Instagram numeric user id via the public web
- * profile endpoint. This needs no login and works even though the underlying
- * ig-chat-api `getUserInfo` only accepts numeric ids.
+ * Fetch a public Instagram profile (username or profile URL) via
+ * web_profile_info. Returns a normalized profile, or null.
+ *
+ * The endpoint is unauthenticated and gets rate limited ("Please wait a few
+ * minutes before you try again", HTTP 401) under bursts, so successful
+ * username -> id lookups are cached on disk and reused.
  */
-async function resolveInstagramUserID(username, timeout = 15000) {
-	if (!username) return null;
-	const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
+const USERNAME_CACHE_FILE = path.join(__dirname, "..", "data", "username-cache.json");
+let usernameCache = null;
+
+function loadUsernameCache() {
+	if (usernameCache) return usernameCache;
+	try {
+		usernameCache = JSON.parse(fs.readFileSync(USERNAME_CACHE_FILE, "utf8")) || {};
+	}
+	catch (_) {
+		usernameCache = {};
+	}
+	return usernameCache;
+}
+
+function saveUsernameCache() {
+	try {
+		fs.mkdirSync(path.dirname(USERNAME_CACHE_FILE), { recursive: true });
+		fs.writeFileSync(USERNAME_CACHE_FILE, JSON.stringify(usernameCache));
+	}
+	catch (_) { }
+}
+
+async function fetchInstagramProfile(username, timeout = 15000) {
+	const handle = instagramUsername(username) || (username ? String(username).replace(/^@/, "") : null);
+	if (!handle) return null;
+
+	const cache = loadUsernameCache();
+	const cached = cache[handle.toLowerCase()];
+	if (cached && cached.userID) return Object.assign({}, cached);
+
+	const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(handle)}`;
 	const headers = {
 		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
 		"Accept": "application/json, text/plain, */*",
@@ -197,8 +230,6 @@ async function resolveInstagramUserID(username, timeout = 15000) {
 	};
 	let buffer;
 	try {
-		// Reference through the exports so tests (and callers) can swap the
-		// transport without reaching into module internals.
 		buffer = await module.exports.download(url, { headers, timeout });
 	}
 	catch (_) {
@@ -207,11 +238,38 @@ async function resolveInstagramUserID(username, timeout = 15000) {
 	try {
 		const data = JSON.parse(buffer.toString("utf8"));
 		const user = data && data.data && data.data.user;
-		return (user && user.id) ? String(user.id) : null;
+		if (!user) return null;
+		const profile = {
+			userID: user.id != null ? String(user.id) : null,
+			username: user.username || handle,
+			name: user.full_name || user.username || null,
+			biography: user.biography || "",
+			followers: user.edge_followed_by ? user.edge_followed_by.count : undefined,
+			following: user.edge_follow ? user.edge_follow.count : undefined,
+			posts: user.edge_owner_to_timeline_media ? user.edge_owner_to_timeline_media.count : undefined,
+			isPrivate: !!user.is_private,
+			isVerified: !!user.is_verified,
+			profilePicture: user.profile_pic_url_hd || user.profile_pic_url || null
+		};
+		if (profile.userID) {
+			cache[handle.toLowerCase()] = profile;
+			saveUsernameCache();
+		}
+		return profile;
 	}
 	catch (_) {
 		return null;
 	}
+}
+
+/**
+ * Resolve a username to an Instagram numeric user id via the public web
+ * profile endpoint. This needs no login and works even though the underlying
+ * ig-chat-api `getUserInfo` only accepts numeric ids.
+ */
+async function resolveInstagramUserID(username, timeout = 15000) {
+	const profile = await fetchInstagramProfile(username, timeout);
+	return profile ? profile.userID : null;
 }
 
 /**
@@ -231,9 +289,11 @@ async function resolveUserTarget(args, event, api) {
 	if (numeric) return { id: String(numeric), source: "id" };
 
 	const raw = (args || []).find(arg => /^@?[A-Za-z0-9._]{1,30}$/.test(arg) || /instagram\.com\//i.test(arg));
-	const username = instagramUsername(raw);
+	const username = instagramUsername(raw) || (raw && /^@?[A-Za-z0-9._]{1,30}$/.test(raw) ? raw.replace(/^@/, "") : null);
 	if (username) {
-		// Prefer the logged-in session; fall back to the public endpoint.
+		// Prefer the authenticated session (uses the server's cookies, so it is
+		// not rate limited the way the anonymous endpoint is). Fall back to the
+		// public endpoint for servers that cannot resolve usernames.
 		if (api) {
 			try {
 				const info = await new Promise((resolve, reject) =>
@@ -251,6 +311,52 @@ async function resolveUserTarget(args, event, api) {
 	return { id: null };
 }
 
+/**
+ * Resolve a full profile from command arguments: a reply to a user, a numeric
+ * user id, or a username / @handle / profile URL. Returns a normalized profile
+ * (`{ userID, username, name, biography, followers, following, posts,
+ * isPrivate, isVerified, profilePicture }`), or null when nothing is found.
+ */
+async function resolveProfile(args, event, api) {
+	const target = await resolveUserTarget(args, event, api);
+	if (!target.id) return null;
+
+	// The authenticated session is the reliable source of truth for a numeric
+	// id (and is not rate limited like the public endpoint).
+	if (api) {
+		try {
+			const info = await new Promise((resolve, reject) =>
+				api.getUserInfo(String(target.id), (error, result) => error ? reject(error) : resolve(result)));
+			const profile = info && Object.values(info)[0];
+			if (profile) {
+				return {
+					userID: String(profile.userID || target.id),
+					username: profile.vanity || null,
+					name: profile.name || profile.firstName || null,
+					biography: profile.biography || "",
+					followers: profile.followerCount,
+					following: profile.followingCount,
+					posts: undefined,
+					isPrivate: profile.isPrivate,
+					isVerified: profile.isVerified,
+					profilePicture: profile.profilePicture || profile.thumbSrc || null
+				};
+			}
+		}
+		catch (_) { }
+	}
+
+	// Fall back to the public profile (also covers handle-only lookups).
+	const raw = (args || []).find(arg => instagramUsername(arg) || /^@?[A-Za-z0-9._]{1,30}$/.test(arg) && !/^\d+$/.test(arg));
+	const username = raw ? (instagramUsername(raw) || raw.replace(/^@/, "")) : null;
+	if (target.source === "mention" && username) {
+		const profile = await fetchInstagramProfile(username);
+		if (profile) return profile;
+	}
+
+	return { userID: String(target.id) };
+}
+
 module.exports = {
 	getType,
 	isStream,
@@ -266,6 +372,13 @@ module.exports = {
 	formatTime,
 	replaceArgs,
 	instagramUsername,
+	fetchInstagramProfile,
 	resolveInstagramUserID,
-	resolveUserTarget
+	resolveUserTarget,
+	resolveProfile,
+	_resetUsernameCache() {
+		usernameCache = {};
+		try { fs.rmSync(USERNAME_CACHE_FILE, { force: true }); }
+		catch (_) { }
+	}
 };

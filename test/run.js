@@ -49,7 +49,7 @@ function fakeApi(overrides = {}) {
 			return Promise.resolve({ threadID, messageID: "m" + calls.length });
 		},
 		sendImage: (img, threadID, caption, cb, reply) => {
-			calls.push({ method: "sendImage", caption, reply, threadID });
+			calls.push({ method: "sendImage", img, caption, reply, threadID });
 			cb && cb(null, { threadID, messageID: "img" + calls.length });
 		},
 		sendAudio: (a, threadID, cb, reply) => { calls.push({ method: "sendAudio", threadID, reply }); cb && cb(null, { threadID, messageID: "aud" + calls.length }); },
@@ -113,6 +113,9 @@ function makeDatabase() {
 }
 
 async function main() {
+	// Username lookups are cached on disk; start every run clean.
+	utils._resetUsernameCache();
+
 	/* ── event normalization ── */
 	await test("normalizeEvent: reply becomes message_reply + messageReply", () => {
 		const ev = normalizeEvent({
@@ -690,6 +693,7 @@ async function main() {
 	await test("uid: a profile URL resolves through the public endpoint when the session cannot", async () => {
 		const api = fakeApi();
 		api.getUserInfo = (id, cb) => cb(new Error("handle lookup unsupported"));
+		utils._resetUsernameCache();
 		const original = utils.download;
 		utils.download = async () => Buffer.from(JSON.stringify({ data: { user: { id: "555111" } } }));
 		const db = makeDatabase();
@@ -702,6 +706,35 @@ async function main() {
 		}
 		const reply = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
 		assert.strictEqual(reply, "555111");
+	});
+
+	await test("target: every command resolves a bare username", async () => {
+		const cases = [
+			{ body: "-uid bob", method: "sendMessage", expect: "222" },
+			{ body: "-info bob", method: "sendImage", expect: "Bob" },
+			{ body: "-pfp bob", method: "sendImage", expect: "pic.jpg" },
+			{ body: "-adduser bob", method: "addUserToThread", expect: "222", extraEvent: { isGroup: true } },
+			{ body: "-removeuser bob", method: "removeUserFromThread", expect: "222", extraEvent: { isGroup: true } }
+		];
+		for (const item of cases) {
+			const api = fakeApi();
+			// Force the public endpoint so the resolved id is deterministic.
+			api.getUserInfo = (id, cb) => cb(new Error("session handle lookup unsupported"));
+			utils._resetUsernameCache();
+			const original = utils.download;
+			utils.download = async () => Buffer.from(JSON.stringify({ data: { user: { id: "222", username: "bob", full_name: "Bob", profile_pic_url_hd: "https://x/pic.jpg" } } }));
+			const db = makeDatabase();
+			try {
+				await runCommand(item.body, { api, db, config: makeConfig(), extraEvent: item.extraEvent });
+			}
+			finally {
+				utils.download = original;
+			}
+			const call = api.calls.find(c => c.method === item.method);
+			assert.ok(call, `expected ${item.method} for "${item.body}"`);
+			const haystack = JSON.stringify(api.calls);
+			assert.ok(haystack.includes(item.expect), `expected "${item.expect}" for "${item.body}", got ${haystack}`);
+		}
 	});
 
 	await test("utils: instagramUsername parses URLs, handles and rejects paths", () => {
@@ -717,6 +750,7 @@ async function main() {
 
 	await test("utils: resolveInstagramUserID reads the public web_profile_info", async () => {
 		const original = utils.download;
+		utils._resetUsernameCache();
 		utils.download = async url => {
 			assert.ok(/web_profile_info\/\?username=chistyeee/.test(url), "expected the profile endpoint");
 			return Buffer.from(JSON.stringify({ data: { user: { id: "10402267946" } } }));
@@ -738,6 +772,115 @@ async function main() {
 		finally {
 			utils.download = original;
 		}
+	});
+
+	await test("info: shows a user's details for a replied user", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(null, { "777": { userID: "777", name: "Jane Doe", vanity: "jane", biography: "hi", followerCount: 1234, followingCount: 56, isPrivate: true, profilePicture: "https://example.com/p.jpg" } });
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "message_reply", threadID: "t", messageID: "m", senderID: "5", body: "-info",
+			messageReply: { messageID: "o", senderID: "777", body: "", attachments: [] }, isGroup: false
+		});
+		const text = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.ok(/Jane Doe/.test(text) && /@jane/.test(text) && /1,234/.test(text), "expected profile details: " + text);
+	});
+
+	await test("info: resolves an @handle through the public profile", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(new Error("handle lookup unsupported"));
+		utils._resetUsernameCache();
+		const original = utils.download;
+		utils.download = async () => Buffer.from(JSON.stringify({ data: { user: {
+			id: "10402267946", username: "chistyeee", full_name: "Meheraz", biography: "bio here",
+			edge_followed_by: { count: 1106 }, edge_follow: { count: 163 },
+			edge_owner_to_timeline_media: { count: 2 }, is_private: false, is_verified: false,
+			profile_pic_url_hd: "https://example.com/hd.jpg"
+		} } }));
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		try {
+			await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "-info @chistyeee", isGroup: false });
+		}
+		finally {
+			utils.download = original;
+		}
+		const image = api.calls.find(c => c.method === "sendImage");
+		assert.ok(image && /hd\.jpg/.test(String(image.img)), "expected the profile picture attachment");
+		const text = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.ok(/Meheraz/.test(text) && /1,106/.test(text) && /bio here/.test(text), "expected the profile details: " + text);
+	});
+
+	await test("info: a profile URL resolves to the same user", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(new Error("handle lookup unsupported"));
+		utils._resetUsernameCache();
+		const original = utils.download;
+		utils.download = async url => {
+			assert.ok(/web_profile_info\/\?username=chistyeee/.test(url));
+			return Buffer.from(JSON.stringify({ data: { user: { id: "10402267946", username: "chistyeee", full_name: "Meheraz" } } }));
+		};
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		try {
+			await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "-info https://www.instagram.com/chistyeee?stkn=abc", isGroup: false });
+		}
+		finally {
+			utils.download = original;
+		}
+		const text = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.ok(/10402267946/.test(text), "expected the resolved id: " + text);
+	});
+
+	await test("pfp: sends the user's profile picture", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(null, { "777": { userID: "777", name: "Jane", profilePicture: "https://example.com/jane.jpg" } });
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "message_reply", threadID: "t", messageID: "m", senderID: "5", body: "-pfp",
+			messageReply: { messageID: "o", senderID: "777", body: "", attachments: [] }, isGroup: false
+		});
+		const image = api.calls.find(c => c.method === "sendImage");
+		assert.ok(image, "expected an image");
+		assert.strictEqual(image.img, "https://example.com/jane.jpg");
+	});
+
+	await test("pfp: resolves a profile URL through the public pic", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(new Error("handle lookup unsupported"));
+		utils._resetUsernameCache();
+		const original = utils.download;
+		utils.download = async () => Buffer.from(JSON.stringify({ data: { user: { id: "10402267946", username: "chistyeee", full_name: "Meheraz", profile_pic_url_hd: "https://example.com/chisty.jpg" } } }));
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		try {
+			await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "-pfp https://www.instagram.com/chistyeee?stkn=abc", isGroup: false });
+		}
+		finally {
+			utils.download = original;
+		}
+		const image = api.calls.find(c => c.method === "sendImage");
+		assert.ok(image, "expected an image");
+		assert.strictEqual(image.img, "https://example.com/chisty.jpg");
+	});
+
+	await test("pfp: missing user asks for a target", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(new Error("nope"));
+		const original = utils.download;
+		utils.download = async () => { throw new Error("network"); };
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		try {
+			await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "-pfp @ghost", isGroup: false });
+		}
+		finally {
+			utils.download = original;
+		}
+		const text = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.ok(/@ghost/.test(text));
 	});
 
 	await test("avatar: uses an image from the replied message (largePreviewUrl)", async () => {
@@ -1157,10 +1300,10 @@ async function main() {
 	});
 
 	/* ── adduser / removeuser ── */
-	await test("adduser: registered with the NZ R author", () => {
+	await test("adduser: registered with the Neoaz author", () => {
 		const command = registry.resolve("adduser");
 		assert.ok(command, "adduser should be registered");
-		assert.strictEqual(command.config.author, "NZ R.");
+		assert.strictEqual(command.config.author, "Neoaz 🐊");
 		assert.strictEqual(command.config.role, 2);
 	});
 
@@ -1172,10 +1315,19 @@ async function main() {
 		assert.ok(/555/.test(out), "expected a confirmation");
 	});
 
-	await test("adduser: resolves an @mention through getUserInfo", async () => {
-		const api = fakeApi({ getUserInfo: (id, cb) => cb(null, { [id]: { userID: "777", name: "Mentioned" } }) });
+	await test("adduser: resolves an @mention through the public profile", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(new Error("session handle lookup unsupported"));
+		utils._resetUsernameCache();
+		const original = utils.download;
+		utils.download = async () => Buffer.from(JSON.stringify({ data: { user: { id: "777", username: "someone" } } }));
 		const db = makeDatabase();
-		await runCommand("-adduser @someone", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		try {
+			await runCommand("-adduser @someone", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		}
+		finally {
+			utils.download = original;
+		}
 		assert.ok(api.calls.some(c => c.method === "addUserToThread" && c.uid === "777"), "expected the resolved mention id");
 	});
 
@@ -1196,15 +1348,23 @@ async function main() {
 
 	await test("adduser: unknown mention reports it", async () => {
 		const api = fakeApi({ getUserInfo: (id, cb) => cb(null, {}) });
+		const original = utils.download;
+		utils.download = async () => Buffer.from(JSON.stringify({ data: {} }));
 		const db = makeDatabase();
-		const out = await runCommand("-adduser @ghost", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		let out;
+		try {
+			out = await runCommand("-adduser @ghost", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		}
+		finally {
+			utils.download = original;
+		}
 		assert.ok(/@ghost/.test(out));
 	});
 
-	await test("removeuser: registered with the NZ R author", () => {
+	await test("removeuser: registered with the Neoaz author", () => {
 		const command = registry.resolve("removeuser");
 		assert.ok(command, "removeuser should be registered");
-		assert.strictEqual(command.config.author, "NZ R.");
+		assert.strictEqual(command.config.author, "Neoaz 🐊");
 		assert.strictEqual(command.config.role, 2);
 	});
 
@@ -1217,9 +1377,18 @@ async function main() {
 	});
 
 	await test("removeuser: resolves an @mention and a numeric id", async () => {
-		const api = fakeApi({ getUserInfo: (id, cb) => cb(null, { [id]: { userID: "888" } }) });
+		const api = fakeApi();
+		const original = utils.download;
+		utils._resetUsernameCache();
+		api.getUserInfo = (id, cb) => cb(new Error("session handle lookup unsupported"));
+		utils.download = async () => Buffer.from(JSON.stringify({ data: { user: { id: "888", username: "who" } } }));
 		const db = makeDatabase();
-		await runCommand("-removeuser @who", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		try {
+			await runCommand("-removeuser @who", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
+		}
+		finally {
+			utils.download = original;
+		}
 		await runCommand("-removeuser 9999", { api, db, config: makeConfig(), extraEvent: { isGroup: true } });
 		assert.ok(api.calls.some(c => c.method === "removeUserFromThread" && c.uid === "888"));
 		assert.ok(api.calls.some(c => c.method === "removeUserFromThread" && c.uid === "9999"));

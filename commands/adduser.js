@@ -7,13 +7,13 @@ module.exports = {
 	config: {
 		name: "adduser",
 		aliases: ["addtouser", "addmember"],
-		author: "NZ R.",
+		author: "Neoaz 🐊",
 		category: "admin",
 		cooldown: 2,
 		role: 2,
 		noPrefix: true,
 		description: { en: "Add a user to the current thread" },
-		usage: { en: "{p}adduser <userID | @handle> — or reply to a user's message" }
+		usage: { en: "{p}adduser <userID | @handle | username | profile URL> — or reply to a message" }
 	},
 
 	onStart: async function ({ message, args, event, config, api }) {

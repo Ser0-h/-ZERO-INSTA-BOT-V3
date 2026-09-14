@@ -1,31 +1,49 @@
 "use strict";
 
-const utils = require("../src/utils");
+const { resolveUserTarget, resolveProfile } = require("../src/utils");
+
+function number(value) {
+	return value == null ? "—" : Number(value).toLocaleString("en-US");
+}
 
 module.exports = {
 	config: {
 		name: "info",
-		aliases: ["stats", "about"],
+		aliases: ["whois", "userinfo", "profile"],
 		author: "Neoaz 🐊",
 		category: "info",
 		cooldown: 3,
 		role: 0,
-		description: { en: "Show bot runtime information" },
-		usage: { en: "{p}info" }
+		description: { en: "Show an Instagram user's profile details" },
+		usage: { en: "{p}info [userID | @handle | username | profile URL] — or reply to a message" }
 	},
 
-	onStart: async function ({ message, config, registry, usersData, threadsData, api }) {
-		const uptime = utils.formatTime(Date.now() - (global.instabotStartedAt || Date.now()));
+	onStart: async function ({ message, args, event, api }) {
+		const target = await resolveUserTarget(args, event, api);
+		if (!target.id) {
+			if (target.username) return message.reply(`Could not find @${target.username}.`);
+			return message.reply("Provide a numeric user id or @mention, or reply to a user's message.");
+		}
+
+		const profile = await resolveProfile(args, event, api);
+		if (!profile) return message.reply(`Could not find user ${target.id}.`);
+
+		const badges = [profile.isVerified ? "✅ Verified" : null, profile.isPrivate ? "🔒 Private" : "🌐 Public"]
+			.filter(Boolean).join(" · ");
+
 		const lines = [
-			`🤖 ${config.botName}`,
-			`Uptime: ${uptime}`,
-			`Prefix: ${config.prefix}`,
-			`Commands: ${registry.commands.size}`,
-			`Events: ${registry.events.length}`,
-			`Users tracked: ${usersData.count()}`,
-			`Threads tracked: ${threadsData.count()}`,
-			`Bot id: ${api.getCurrentUserID()}`
-		];
+			`👤 ${profile.name || profile.username || target.id}`,
+			`@${profile.username || "—"}`,
+			`🆔 ${profile.userID || target.id}`,
+			badges,
+			`👥 Followers: ${number(profile.followers)}`,
+			`➡️ Following: ${number(profile.following)}`,
+			profile.posts != null ? `🖼️ Posts: ${number(profile.posts)}` : null,
+			profile.biography ? `\n📝 ${profile.biography}` : null
+		].filter(Boolean);
+
+		const picture = profile.profilePicture;
+		if (picture) return message.reply({ attachment: picture, body: lines.join("\n") });
 		return message.reply(lines.join("\n"));
 	}
 };

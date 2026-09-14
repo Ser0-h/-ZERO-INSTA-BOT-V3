@@ -7,13 +7,13 @@ module.exports = {
 	config: {
 		name: "removeuser",
 		aliases: ["kick", "removefromuser", "removemember"],
-		author: "NZ R.",
+		author: "Neoaz 🐊",
 		category: "admin",
 		cooldown: 2,
 		role: 2,
 		noPrefix: true,
 		description: { en: "Remove a user from the current thread" },
-		usage: { en: "{p}removeuser <userID | @handle> — or reply to a user's message" }
+		usage: { en: "{p}removeuser <userID | @handle | username | profile URL> — or reply to a message" }
 	},
 
 	onStart: async function ({ message, args, event, config, api }) {
