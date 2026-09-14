@@ -52,7 +52,7 @@ function fakeApi(overrides = {}) {
 			calls.push({ method: "sendImage", caption, reply, threadID });
 			cb && cb(null, { threadID, messageID: "img" + calls.length });
 		},
-		sendAudio: (a, threadID, cb) => { calls.push({ method: "sendAudio", threadID }); cb && cb(null, {}); },
+		sendAudio: (a, threadID, cb, reply) => { calls.push({ method: "sendAudio", threadID, reply }); cb && cb(null, { threadID, messageID: "aud" + calls.length }); },
 		sendVideo: (v, threadID, cb) => { calls.push({ method: "sendVideo", threadID }); cb && cb(null, {}); },
 		unsendMessage: (id, threadID, cb) => { calls.push({ method: "unsendMessage", id, threadID }); cb && cb(null, {}); },
 		setMessageReaction: (r, id, threadID, cb) => { calls.push({ method: "setMessageReaction", r, id, threadID }); cb && cb(null, {}); },
@@ -207,9 +207,23 @@ async function main() {
 		const api = fakeApi();
 		const message = createMessageContext({ api, event: { threadID: "t", messageID: "m" } });
 		await message.send({ body: "cap", attachment: [{ _readableState: {}, path: "a.png" }, { _readableState: {}, path: "b.m4a" }, { _readableState: {}, path: "c.mp4" }] });
-		const methods = api.calls.map(c => c.method);
+		const methods = api.calls.map(c => c.method).filter(m => m !== "sendMessage");
 		assert.deepStrictEqual(methods, ["sendImage", "sendAudio", "sendVideo"]);
-		assert.strictEqual(api.calls[0].caption, "cap");
+	});
+
+	await test("message: an image caption is sent as a separate message", async () => {
+		// photo_attachment is media-only, so the caption follows as its own
+		// message or it is silently dropped.
+		const api = fakeApi();
+		const message = createMessageContext({ api, event: { threadID: "t", messageID: "evt" } });
+		await message.reply({ body: "a picture", attachment: { _readableState: {}, path: "a.png" } });
+		const image = api.calls.find(c => c.method === "sendImage");
+		const text = api.calls.find(c => c.method === "sendMessage");
+		assert.ok(image, "the image must be sent");
+		assert.strictEqual(image.caption, "");
+		assert.ok(text, "the caption must be sent as a separate message");
+		assert.strictEqual(text.form.body, "a picture");
+		assert.strictEqual(text.reply, "evt");
 	});
 
 	await test("message: a video caption is sent as a separate message", async () => {
@@ -224,6 +238,21 @@ async function main() {
 		assert.ok(text, "the caption must be sent as a separate message");
 		assert.strictEqual(text.form.body, "anime edit");
 		assert.strictEqual(text.reply, "evt");
+	});
+
+	await test("message: an audio caption is sent as a separate reply", async () => {
+		// voice_attachment is media-only too: the caption follows as its own
+		// message and the reply target must survive on both sends.
+		const api = fakeApi();
+		const message = createMessageContext({ api, event: { threadID: "t", messageID: "evt" } });
+		await message.reply({ body: "listen", attachment: { _readableState: {}, path: "b.m4a" } });
+		const audio = api.calls.find(c => c.method === "sendAudio");
+		const text = api.calls.find(c => c.method === "sendMessage");
+		assert.ok(audio, "the audio must be sent");
+		assert.ok(text, "the caption must be sent as a separate message");
+		assert.strictEqual(text.form.body, "listen");
+		assert.strictEqual(text.reply, "evt");
+		assert.strictEqual(audio.reply, "evt");
 	});
 
 	await test("message: unsend and react use the thread", async () => {

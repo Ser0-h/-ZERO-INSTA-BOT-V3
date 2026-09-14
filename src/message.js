@@ -66,8 +66,19 @@ function createMessageContext({ api, event, log }) {
 							api.sendMessage({ body: caption }, threadID, () => done(null, result), replyTarget);
 						});
 					}
-					if (kind === "audio") return api.sendAudio(source, threadID, done);
-					return api.sendImage(source, threadID, caption, done, current === 0 ? replyTarget : undefined);
+					if (kind === "audio") {
+						// The voice_attachment broadcast is also media-only: send the
+						// clip, then its caption as a separate plain message.
+						const audioReply = current === 0 ? replyTarget : undefined;
+						return api.sendAudio(source, threadID, (error, result) => {
+							if (error || !caption) return done(error, result);
+							api.sendMessage({ body: caption }, threadID, () => done(null, result), audioReply);
+						}, audioReply);
+					}
+					return api.sendImage(source, threadID, "", (error, result) => {
+						if (error || !caption) return done(error, result);
+						api.sendMessage({ body: caption }, threadID, () => done(null, result), current === 0 ? replyTarget : undefined);
+					}, current === 0 ? replyTarget : undefined);
 				}
 				catch (error) {
 					return reject(error);
