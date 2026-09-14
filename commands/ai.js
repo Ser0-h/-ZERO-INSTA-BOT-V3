@@ -228,10 +228,13 @@ async function generateAndSend({ message, session, key, userText, setReplyHandle
 }
 
 function continuation({ session, key }) {
-	return async function ({ message: replyMessage, event: replyEvent }) {
+	// The dispatcher supplies setReplyHandler as a sibling of `event`, not as a
+	// property of it. Taking it from `replyEvent` left it undefined, so the
+	// handler for the newest bot reply was never armed and the conversation
+	// stopped after the second exchange.
+	return async function ({ message: replyMessage, event: replyEvent, setReplyHandler }) {
 		const body = typeof replyEvent.body === "string" ? replyEvent.body.trim() : "";
 		if (!body) return;
-		const { setReplyHandler } = replyEvent;
 		await generateAndSend({
 			message: replyMessage,
 			session,
