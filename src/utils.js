@@ -313,7 +313,9 @@ async function resolveUserTarget(args, event, api) {
 				const info = await new Promise((resolve, reject) =>
 					api.getUserInfo(username, (error, result) => error ? reject(error) : resolve(result)));
 				const profile = info && Object.values(info)[0];
-				if (profile && profile.userID) return { id: String(profile.userID), source: "mention" };
+				// Carry the fetched profile out so resolveProfile does not repeat
+				// the same lookup (each call is a round trip that can be throttled).
+				if (profile && profile.userID) return { id: String(profile.userID), source: "mention", profile };
 			}
 			catch (error) {
 				if (isRateLimitError(error)) rateLimited = true;
@@ -344,6 +346,24 @@ async function resolveProfile(args, event, api) {
 	const target = await resolveUserTarget(args, event, api);
 	if (!target.id) {
 		return target.rateLimited ? { rateLimited: true } : null;
+	}
+
+	// A mention already fetched the profile while resolving the id; reuse it
+	// rather than issuing a second getUserInfo for the same account.
+	if (target.profile) {
+		const p = target.profile;
+		return {
+			userID: String(p.userID || target.id),
+			username: p.vanity || null,
+			name: p.name || p.firstName || null,
+			biography: p.biography || "",
+			followers: p.followerCount,
+			following: p.followingCount,
+			posts: undefined,
+			isPrivate: p.isPrivate,
+			isVerified: p.isVerified,
+			profilePicture: p.profilePicture || p.thumbSrc || null
+		};
 	}
 
 	let rateLimited = false;

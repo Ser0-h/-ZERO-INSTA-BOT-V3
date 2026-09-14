@@ -251,34 +251,20 @@ module.exports = {
 			const isEvent = isEventFlag || looksLikeEvent;
 			const dest = path.join(targetDir(isEvent), fileName);
 
-			if (fs.existsSync(dest)) {
-				const sent = await message.reply(
-					`⚠️ "${fileName}" already exists. React to this message to overwrite it.`
-				);
-				if (typeof setReactionHandler === "function" && sent && sent.messageID) {
-					setReactionHandler(async ({ event: reactionEvent, message: reactionMessage }) => {
-						if (String(reactionEvent.userID || reactionEvent.senderID) !== String(event.senderID)) return;
-						try {
-							const done = installFile(fileName, code, isEvent);
-							if (done.error) return reactionMessage.reply(`❌ ${done.error}`);
-							const loaded = loadInto(registry, done.file, isEvent);
-							await reactionMessage.reply(`✅ Installed "${loaded.name}" from ${source || "code"} and reloaded it live.`);
-						}
-						catch (error) {
-							await reactionMessage.reply(`❌ Install failed: ${String(error.message || error)}`);
-						}
-					}, sent.messageID);
-				}
-				return sent;
-			}
-
+			// Overwrite in place. An earlier version replied "already exists,
+			// react to this message to overwrite it" and armed a reaction handler
+			// on the bot's own reply — but that handler only fired if the user
+			// reacted to the BOT's message (not the command), so a re-install
+			// looked like it did nothing at all. Installing by URL is an explicit
+			// request, so honour it and say what was replaced.
+			const existed = fs.existsSync(dest);
 			try {
 				const done = installFile(fileName, code, isEvent);
 				if (done.error) return message.reply(`❌ ${done.error}`);
 				const loaded = loadInto(registry, done.file, isEvent);
 				return message.reply(
-					`✅ Installed "${loaded.name}" (${isEvent ? "event" : "command"}) from ${source || "code"} ` +
-					`to ${isEvent ? "events" : "commands"}/${fileName} and reloaded it live.`
+					`✅ ${existed ? "Updated" : "Installed"} "${loaded.name}" (${isEvent ? "event" : "command"}) ` +
+					`from ${source || "code"} to ${isEvent ? "events" : "commands"}/${fileName} and reloaded it live.`
 				);
 			}
 			catch (error) {

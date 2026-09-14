@@ -711,6 +711,34 @@ async function main() {
 		}
 	});
 
+	await test("cmd: reinstalling over an existing file overwrites it and replies", async () => {
+		// Regression: a re-install replied "already exists, react to this message
+		// to overwrite it" and armed a reaction handler on the BOT's reply. A user
+		// who reacted to the command message (or did not react) saw nothing happen
+		// at all — the install looked silent. Installing by URL is explicit, so it
+		// must overwrite and confirm.
+		const api = fakeApi();
+		const db = makeDatabase();
+		const path = require("path");
+		const fs = require("fs");
+		const fileName = "testoverwrite_" + Date.now().toString(36) + ".js";
+		const dest = path.join(__dirname, "..", "commands", fileName);
+		const first = 'module.exports = { config: { name: "zzzover", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("v1") };';
+		const second = 'module.exports = { config: { name: "zzzover", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("v2") };';
+		try {
+			const a = await runCommand(`-cmd install ${fileName} ${first}`, { api, db, config: makeConfig() });
+			assert.ok(/Installed "zzzover"/.test(a), "first install should report Installed, got: " + a);
+			const b = await runCommand(`-cmd install ${fileName} ${second}`, { api, db, config: makeConfig() });
+			assert.ok(/Updated "zzzover"/.test(b), "re-install must report Updated, got: " + b);
+			assert.ok(!/react to this message/i.test(b), "re-install must not require a reaction");
+			assert.match(fs.readFileSync(dest, "utf8"), /"v2"/, "the file must hold the new code");
+		}
+		finally {
+			registry.unregisterCommand("zzzover");
+			try { fs.unlinkSync(dest); } catch (_) { }
+		}
+	});
+
 	await test("cmd: uninstall removes the file and unloads it live", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
