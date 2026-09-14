@@ -37,12 +37,18 @@ function createStatusServer(options) {
 	}
 
 	function handler(req, res) {
-		const body = JSON.stringify(payload());
-		res.writeHead(200, {
-			"Content-Type": "application/json; charset=utf-8",
-			"Content-Length": Buffer.byteLength(body)
-		});
-		res.end(body);
+		try {
+			const body = JSON.stringify(payload());
+			res.writeHead(200, {
+				"Content-Type": "application/json; charset=utf-8",
+				"Content-Length": Buffer.byteLength(body)
+			});
+			res.end(body);
+		}
+		catch (_) {
+			// A client that aborts mid-response must never take the process down.
+			try { res.destroy(); } catch (_) { /* ignore */ }
+		}
 	}
 
 	return {
@@ -50,9 +56,15 @@ function createStatusServer(options) {
 		start() {
 			if (server) return Promise.resolve(server);
 			server = http.createServer(handler);
+			// A runtime server error (e.g. the socket is closed underneath us)
+			// must not crash the process: log it and keep running. Requests are
+			// best-effort; the bot's real work is outbound.
+			server.on("error", error => log.warn("HTTP", `status server error: ${error && error.message ? error.message : error}`));
 			return new Promise((resolve, reject) => {
-				server.once("error", reject);
+				const onListenError = error => { server.removeListener("error", onListenError); reject(error); };
+				server.once("error", onListenError);
 				server.listen(port, host, () => {
+					server.removeListener("error", onListenError);
 					log.info("HTTP", `status server listening on http://${host}:${port}`);
 					resolve(server);
 				});

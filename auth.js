@@ -264,6 +264,7 @@ class EventStream {
 		this.attempts = 0;
 		this.timer = null;
 		this.lastChunkAt = 0;
+		this.connectedAt = 0;
 		this.stallTimer = null;
 	}
 
@@ -284,16 +285,23 @@ class EventStream {
 	// The server sends a `: ping` comment every ~25s. If nothing at all arrives
 	// for much longer the stream is silently dead (common through proxies), so
 	// drop it and reconnect.
+	_isStalled(now) {
+		if (this.stopped || !this.req) return false;
+		// A stream that opened but has never delivered a byte (lastChunkAt=0) is
+		// a silent hang too: a proxy can hold the socket open while the server
+		// never writes. Age it from the moment the request was made, not from a
+		// chunk that may never come.
+		const since = this.lastChunkAt || this.connectedAt;
+		return !!since && now - since > 90000;
+	}
+
 	_armStallWatch() {
 		if (this.stallTimer) return;
-		const limit = 90000;
 		this.stallTimer = setInterval(() => {
-			if (this.stopped || !this.req) return;
-			if (this.lastChunkAt && Date.now() - this.lastChunkAt > limit) {
-				try { this.req.destroy(); } catch (_) { /* ignore */ }
-				this.req = null;
-				this._scheduleReconnect();
-			}
+			if (!this._isStalled(Date.now())) return;
+			try { this.req.destroy(); } catch (_) { /* ignore */ }
+			this.req = null;
+			this._scheduleReconnect();
 		}, 15000);
 		if (this.stallTimer.unref) this.stallTimer.unref();
 	}
@@ -302,6 +310,11 @@ class EventStream {
 		if (this.stopped) return;
 		const target = this.settings.base;
 		const lib = target.protocol === "https:" ? https : http;
+		// Reset the silence clock for this attempt. Stale timestamps from a
+		// previous connection would otherwise make the stall watch kill a fresh
+		// socket instantly and spin the reconnect loop.
+		this.lastChunkAt = 0;
+		this.connectedAt = Date.now();
 		this.req = lib.request({
 			protocol: target.protocol,
 			hostname: target.hostname,
@@ -472,3 +485,4 @@ function makeMethod(settings, method) {
 module.exports = login;
 module.exports.login = login;
 module.exports.METHODS = METHODS.slice();
+module.exports.EventStream = EventStream;

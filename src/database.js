@@ -33,15 +33,22 @@ class Store {
 			this._writeTimer = null;
 			this.flush();
 		}, 250);
+		if (this._writeTimer.unref) this._writeTimer.unref();
 	}
 
 	flush() {
 		try {
 			fs.mkdirSync(path.dirname(this.file), { recursive: true });
-			fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+			// Write to a temp file and rename so a crash mid-write cannot leave a
+			// truncated/corrupt database behind on a long-running bot.
+			const tmp = this.file + ".tmp";
+			fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+			fs.renameSync(tmp, this.file);
 		}
 		catch (error) {
-			/* best effort */
+			// Never swallow this: a read-only disk or a full volume would otherwise
+			// lose every stored user/thread silently for the life of the process.
+			require("./logger").warn("DATABASE", `Could not save ${path.basename(this.file)}: ${error.message}`);
 		}
 	}
 
