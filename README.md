@@ -111,6 +111,13 @@ ig-chat-api-server. The only thing you must supply is **your own cookies**.
 > only if you run a *separate* server (your own deployment) rather than the
 > shared one.
 
+> **Per-session secret (automatic).** The shared token authenticates you to the
+> server, but it must not let one bot act as another. When your bot pushes its
+> cookies the server also returns a random **`sessionToken`**, which the bot
+> sends on every later call. You never set it — it is adopted automatically, just
+> like the id — and a bot that does not hold it cannot be addressed by anyone
+> else, even with the shared token.
+
 > **Your cookies are a password.** `account.txt` is git-ignored. Copy
 > `account.example.txt` to `account.txt` locally, or set the cookies as secrets
 > on the host. Never commit them. Your cookies are the only thing that decides

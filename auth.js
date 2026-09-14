@@ -162,14 +162,29 @@ function normalizeSettings(options) {
 	return {
 		base: parseServer(server),
 		token,
-		// The session id is never configured. We start with none and adopt the id
-		// the server assigns in its /cookies reply (see login()). Starting empty
-		// matters: a stale or inherited id must never be sent, or the bot could
-		// be filed on someone else's session before its own cookies are read.
+		// The session id and its secret are never configured. We start with none
+		// and adopt both from the server's /cookies reply (see login()). Starting
+		// empty matters: a stale or inherited value must never be sent, or the bot
+		// could be filed on someone else's session.
 		botId: "",
+		// Per-session secret. The shared token authenticates us to the SERVER;
+		// this authorises us for OUR account only. Adopted from /cookies.
+		sessionToken: "",
 		timeout: Number(options.timeout) || 60000,
 		selfListen: options.selfListen === true || options.selfListen === "true"
 	};
+}
+
+/**
+ * Headers that scope a request to this bot's own session. Only sent once the
+ * server has told us what they are; before that an empty set lets the first
+ * cookie push identify the account from the cookies alone.
+ */
+function sessionHeaders(settings) {
+	const headers = {};
+	if (settings.botId) headers["X-Bot-Id"] = settings.botId;
+	if (settings.sessionToken) headers["X-Session-Token"] = settings.sessionToken;
+	return headers;
 }
 
 function request(settings, method, args, callbackIndex) {
@@ -187,12 +202,11 @@ function request(settings, method, args, callbackIndex) {
 			// Reuse the TLS/TCP connection across calls: fewer handshakes, less
 			// churn on the server, and one persistent socket per client.
 			agent: target.protocol === "https:" ? httpsAgent : httpAgent,
-			headers: {
+			headers: Object.assign({
 				"Content-Type": "application/json",
 				"Content-Length": Buffer.byteLength(payload),
-				Authorization: "Bearer " + settings.token,
-				"X-Bot-Id": settings.botId
-			},
+				Authorization: "Bearer " + settings.token
+			}, sessionHeaders(settings)),
 			timeout: settings.timeout
 		}, res => {
 			const chunks = [];
@@ -230,15 +244,11 @@ function pushCookies(settings, cookies) {
 		const target = settings.base;
 		const lib = target.protocol === "https:" ? https : http;
 		const payload = JSON.stringify({ cookies });
-		const headers = {
+		const headers = Object.assign({
 			"Content-Type": "application/json",
 			"Content-Length": Buffer.byteLength(payload),
 			Authorization: "Bearer " + settings.token
-		};
-		// Only claim a session id once the server has given us one. An empty
-		// header would be worse than none: the server must derive the id purely
-		// from these cookies, never inherit one.
-		if (settings.botId) headers["X-Bot-Id"] = settings.botId;
+		}, sessionHeaders(settings));
 		const req = lib.request({
 			protocol: target.protocol,
 			hostname: target.hostname,
@@ -253,13 +263,15 @@ function pushCookies(settings, cookies) {
 			res.on("data", chunk => chunks.push(chunk));
 			res.on("end", () => {
 				let botId = null;
+				let sessionToken = null;
 				try {
 					const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 					const result = body && body.result;
 					if (result && result.botId) botId = String(result.botId);
+					if (result && result.sessionToken) sessionToken = String(result.sessionToken);
 				}
 				catch (_) { /* body optional */ }
-				resolve({ status: res.statusCode, botId });
+				resolve({ status: res.statusCode, botId, sessionToken });
 			});
 		});
 		req.on("timeout", () => req.destroy(new Error("cookie push timed out")));
@@ -341,14 +353,13 @@ class EventStream {
 			port: target.port || (target.protocol === "https:" ? 443 : 80),
 			path: "/events?botId=" + encodeURIComponent(this.settings.botId) + (this.settings.selfListen ? "&selfListen=1" : ""),
 			method: "GET",
-			headers: {
+			headers: Object.assign({
 				Accept: "text/event-stream",
-				Authorization: "Bearer " + this.settings.token,
-				"X-Bot-Id": this.settings.botId
-			}
+				Authorization: "Bearer " + this.settings.token
+			}, sessionHeaders(this.settings))
 		}, res => {
 			if (res.statusCode === 401) {
-				this.callback(new Error("Unauthorized: check your server token"));
+				this.callback(new Error("Unauthorized: check your server token and session"));
 				return this.stop();
 			}
 			if (res.statusCode !== 200) {
@@ -473,14 +484,20 @@ function login(options, callback) {
 		});
 	}
 
-	(seed
-		? seed.then(value => pushCookies(settings, value)).then(outcome => {
-			// Adopt the session id the server assigned to these cookies. The bot
-			// is never configured with an id; the server derives it from the
-			// account and reports it here.
+	(seed ? seed : Promise.resolve(null))
+		.then(value => pushCookies(settings, value))
+		.then(outcome => {
+			// Adopt what the server assigned to these cookies: the session id and
+			// the per-session secret. Neither is configured on the bot; the server
+			// derives the id from the account and hands back a secret that scopes
+			// this bot to its own session.
+			//
+			// We always push, even with no cookies of our own: the reply carries
+			// the secret for a session the SERVER already holds (accounts/<id>.txt
+			// or IG_ACCOUNTS), which we cannot address otherwise.
 			if (outcome && outcome.botId) settings.botId = outcome.botId;
+			if (outcome && outcome.sessionToken) settings.sessionToken = outcome.sessionToken;
 		}).catch(() => { })
-		: Promise.resolve())
 		.then(() => connect(Math.max(1, Math.floor(settings.timeout / 3000))))
 		.then(id => {
 			api._userID = id != null ? String(id) : null;
