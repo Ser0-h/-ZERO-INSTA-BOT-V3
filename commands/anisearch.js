@@ -8,7 +8,13 @@
 const API_BASE = "https://alldl.neokex.xyz/api";
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-const MAX_BYTES = 64 * 1024 * 1024;
+// Media travels bot -> server as base64 (+33%), and the server caps the body at
+// IG_MAX_BODY_BYTES (8 MB by default). Keep comfortably under that. Override
+// with IG_MAX_MEDIA_BYTES if the server is configured for larger uploads.
+const MAX_BYTES = Math.max(256 * 1024, Number(process.env.IG_MAX_MEDIA_BYTES) || 5 * 1024 * 1024);
+
+// How many different search results to try when a video is too large to send.
+const MAX_ATTEMPTS = 4;
 
 function headersFor(url) {
 	const headers = {
@@ -37,13 +43,18 @@ async function requestJSON(url, timeout = 45000) {
 	}
 }
 
-/** Pick a random video URL from a tik-sr search response. */
-async function randomMatch(query) {
+/** Search TikTok and return every candidate video URL, in random order. */
+async function searchVideos(query) {
 	const payload = await requestJSON(`${API_BASE}/tik-sr?q=${encodeURIComponent(query)}`);
 	const results = (payload && (payload.results || (payload.data && payload.data.results))) || [];
 	const videos = results.map(item => item && item.url).filter(Boolean);
 	if (!videos.length) throw new Error("No matching anime videos were found.");
-	return videos[Math.floor(Math.random() * videos.length)];
+	// Shuffle so "random" is genuinely random and a retry tries a new video.
+	for (let i = videos.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[videos[i], videos[j]] = [videos[j], videos[i]];
+	}
+	return videos;
 }
 
 /** Resolve a TikTok URL to a direct, watermarked-free mp4 link. */
@@ -60,15 +71,57 @@ async function resolveVideo(url) {
 	return { title: data.title, url: download.url, ext: String(download.ext || "mp4").toLowerCase() };
 }
 
+/**
+ * Download the video on the bot and send the bytes.
+ *
+ * Passing the URL straight through makes the *server* fetch TikTok. TikTok's
+ * CDN frequently refuses a datacenter host (or needs browser headers the
+ * library does not send), so the upload fails even though the search worked.
+ * Fetching here, where the request can carry a real User-Agent and Referer,
+ * is far more reliable; the server just receives bytes it can upload.
+ */
+async function fetchVideoBuffer(url, timeout = 60000) {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeout);
+	try {
+		const response = await fetch(url, { headers: headersFor(url), signal: controller.signal, redirect: "follow" });
+		if (!response.ok) throw new Error(`Video download failed (HTTP ${response.status})`);
+		const declared = Number(response.headers.get("content-length")) || 0;
+		if (declared && declared > MAX_BYTES)
+			throw new Error(`The video is ${Math.round(declared / 1048576)} MB, above the send limit.`);
+		const buffer = Buffer.from(await response.arrayBuffer());
+		if (!buffer.length) throw new Error("The video download was empty.");
+		if (buffer.length > MAX_BYTES)
+			throw new Error(`The video is ${Math.round(buffer.length / 1048576)} MB, above the send limit.`);
+		return buffer;
+	}
+	finally {
+		clearTimeout(timer);
+	}
+}
+
 /** Send a video, falling back to plain text if the host is too large or unreadable. */
 async function sendVideo(message, video) {
 	const caption = String(video.title || "Here is your video.").slice(0, 200);
-	const head = await fetch(video.url, { method: "HEAD", headers: headersFor(video.url) }).catch(() => null);
-	const size = head && head.ok ? Number(head.headers.get("content-length")) : 0;
-	if (size && size > MAX_BYTES)
-		throw new Error("The video is too large to send here.");
-	// TikTok CDN links carry no file extension, so tell the sender this is an mp4.
-	return message.reply({ body: caption, attachment: { url: video.url, fileName: "anisearch.mp4" } });
+	// TikTok CDN links carry no file extension, so name it explicitly as an mp4.
+	const buffer = await fetchVideoBuffer(video.url);
+	return message.reply({ body: caption, attachment: { buffer, fileName: "anisearch.mp4" } });
+}
+
+/**
+ * Error text that is actually useful.
+ *
+ * The API server wraps failures in an object whose `.error` holds the reason
+ * while `.message` is often empty (or just "Error"), so reading `.message`
+ * alone loses the cause.
+ */
+function describeError(error) {
+	if (!error) return "Unknown error";
+	const parts = [error.message, error.error, error.type]
+		.map(value => (value == null ? "" : String(value).trim()))
+		.filter(Boolean);
+	const unique = [...new Set(parts)];
+	return unique.length ? unique.join(" — ") : "Unknown error";
 }
 
 module.exports = {
@@ -87,12 +140,43 @@ module.exports = {
 		const query = args.join(" ").trim();
 		if (!query)
 			return message.reply("Usage: anisearch <anime or character>\nExample: anisearch naruto");
+
+		let candidates;
 		try {
-			const match = await randomMatch(query);
-			return await sendVideo(message, await resolveVideo(match));
+			candidates = await searchVideos(query);
 		}
 		catch (error) {
-			return message.reply(`Could not find a video: ${String(error.message || error)}`);
+			return message.reply(`Could not find a video: ${describeError(error)}`);
 		}
+
+		// Try a few results: a video that is too large (or whose CDN link has
+		// expired) is common, and another candidate usually works.
+		let lastError = null;
+		let lastUrl = null;
+		let oversize = 0;
+		for (const url of candidates.slice(0, MAX_ATTEMPTS)) {
+			try {
+				const video = await resolveVideo(url);
+				lastUrl = video.url;
+				await sendVideo(message, video);
+				return;
+			}
+			catch (error) {
+				lastError = error;
+				if (/above the send limit|too large/i.test(describeError(error))) oversize++;
+			}
+		}
+
+		const detail = describeError(lastError);
+		if (oversize && oversize >= Math.min(MAX_ATTEMPTS, candidates.length)) {
+			return message.reply(
+				"Every matching video was too large to send. " +
+				"Raise the limit with IG_MAX_MEDIA_BYTES (and IG_MAX_BODY_BYTES on the server) to allow bigger files."
+			);
+		}
+		if (lastUrl) {
+			return message.reply(`Found a video but could not send it: ${detail}\n${lastUrl}`);
+		}
+		return message.reply(`Could not find a video: ${detail}`);
 	}
 };

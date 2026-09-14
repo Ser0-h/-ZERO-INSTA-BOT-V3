@@ -270,6 +270,7 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 | --- | --- | --- | --- |
 | `help` | `h`, `menu` | user | List commands and usage |
 | `ping` | `pong` | user | Online / latency check |
+| `uptime` | `up`, `runtime` | user | How long the bot has been running |
 | `uid` | `id` | user | Show user / thread ID |
 | `info` | `stats`, `about` | user | Bot stats and uptime |
 | `echo` | `say` | user | Repeat text |
@@ -277,6 +278,7 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 | `avatarfx` | `avfx`, `avatar-effect` | user | Avatar character effect |
 | `sing` | `music`, `song` | user | Search and send a music sticker |
 | `img` | `image`, `sendimg` | user | Send an image by URL |
+| `anisearch` | `anivid`, `animevid` | user | Send a random anime TikTok video |
 | `joke` | `dadjoke` | user | Random joke |
 | `admin` | `adminbot` | bot admin | Add / remove / list bot admins |
 | `ban` | `unban` | bot admin | Ban or unban a user |

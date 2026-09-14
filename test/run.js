@@ -694,7 +694,7 @@ async function main() {
 		assert.ok(/usage/i.test(String(sent[0])), "expected a usage hint");
 	});
 
-	await test("anisearch: searches then sends the matched video", async () => {
+	await test("anisearch: searches, downloads and sends the video bytes", async () => {
 		const command = registry.resolve("anisearch");
 		const originalFetch = global.fetch;
 		const seen = [];
@@ -709,7 +709,12 @@ async function main() {
 					json: async () => ({ metadata: { data: { title: "Naruto edit", downloads: [{ label: "MP4 (No Watermark)", ext: "mp4", url: "https://cdn.example/v.mp4" }] } } })
 				};
 			}
-			return { ok: true, status: 200, headers: { get: () => "1024" } };
+			// The actual video download: small enough to send.
+			return {
+				ok: true, status: 200,
+				headers: { get: name => (name === "content-length" ? "1024" : null) },
+				arrayBuffer: async () => new Uint8Array(1024).buffer
+			};
 		};
 		let sent = null;
 		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
@@ -721,10 +726,77 @@ async function main() {
 		}
 		assert.ok(sent, "expected a reply");
 		assert.strictEqual(sent.body, "Naruto edit");
-		assert.strictEqual(sent.attachment.url, "https://cdn.example/v.mp4");
+		assert.ok(Buffer.isBuffer(sent.attachment.buffer), "the video must be sent as bytes, not a URL");
+		assert.strictEqual(sent.attachment.buffer.length, 1024);
 		assert.strictEqual(sent.attachment.fileName, "anisearch.mp4", "mp4 extension hint must be attached");
 		assert.ok(seen.some(u => u.includes("/tik-sr?q=naruto")), "search endpoint hit");
 		assert.ok(seen.some(u => u.includes("/alldl?url=")), "download endpoint hit");
+		assert.ok(seen.some(u => u.includes("cdn.example/v.mp4")), "video fetched by the bot, not the server");
+	});
+
+	await test("anisearch: retries the next result when a video is too large", async () => {
+		const command = registry.resolve("anisearch");
+		const originalFetch = global.fetch;
+		let downloadCount = 0;
+		global.fetch = async (url) => {
+			if (String(url).includes("/tik-sr")) {
+				return {
+					ok: true, status: 200,
+					json: async () => ({ results: [{ url: "https://www.tiktok.com/@a/video/1" }, { url: "https://www.tiktok.com/@a/video/2" }] })
+				};
+			}
+			if (String(url).includes("/alldl")) {
+				return {
+					ok: true, status: 200,
+					json: async () => ({ metadata: { data: { title: "Edit", downloads: [{ label: "MP4", ext: "mp4", url: "https://cdn.example/v.mp4" }] } } })
+				};
+			}
+			downloadCount++;
+			// First download is oversized; the retry is small.
+			const size = downloadCount === 1 ? 50 * 1024 * 1024 : 2048;
+			return {
+				ok: true, status: 200,
+				headers: { get: name => (name === "content-length" ? String(size) : null) },
+				arrayBuffer: async () => new Uint8Array(size).buffer
+			};
+		};
+		let sent = null;
+		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		try {
+			await command.onStart({ args: ["naruto"], message });
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+		assert.ok(sent && Buffer.isBuffer(sent.attachment.buffer), "expected a video on the retry");
+		assert.strictEqual(sent.attachment.buffer.length, 2048);
+		assert.strictEqual(downloadCount, 2, "the oversized first download must be retried");
+	});
+
+	await test("anisearch: a bare 'Error' from the server is surfaced usefully", async () => {
+		const command = registry.resolve("anisearch");
+		const originalFetch = global.fetch;
+		global.fetch = async (url) => {
+			if (String(url).includes("/tik-sr")) {
+				return { ok: true, status: 200, json: async () => ({ results: [{ url: "https://www.tiktok.com/@a/video/1" }] }) };
+			}
+			if (String(url).includes("/alldl")) {
+				return {
+					ok: true, status: 200,
+					json: async () => ({ metadata: { data: { title: "Edit", downloads: [{ label: "MP4", ext: "mp4", url: "https://cdn.example/v.mp4" }] } } })
+				};
+			}
+			throw new Error("Video download failed (HTTP 403)");
+		};
+		let sent = null;
+		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		try {
+			await command.onStart({ args: ["naruto"], message });
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+		assert.ok(/HTTP 403/.test(String(sent)), "the real reason must be shown, not a bare 'Error'");
 	});
 
 	await test("anisearch: no matches reports an error", async () => {
@@ -740,6 +812,31 @@ async function main() {
 			global.fetch = originalFetch;
 		}
 		assert.ok(/Could not find a video/.test(String(sent)), "expected an error reply");
+	});
+
+	/* ── uptime ── */
+	await test("uptime: registered and reports the running time", async () => {
+		const command = registry.resolve("uptime");
+		assert.ok(command, "uptime should be registered");
+		const previous = global.instabotStartedAt;
+		global.instabotStartedAt = Date.now() - (2 * 86400000 + 3 * 3600000 + 4 * 60000 + 5000);
+		let sent = null;
+		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		try {
+			await command.onStart({ message, config: { botName: "InstaBOT" } });
+		}
+		finally {
+			global.instabotStartedAt = previous;
+		}
+		const text = String(sent);
+		assert.ok(/InstaBOT uptime/.test(text), "should name the bot");
+		assert.ok(/2d 3h 4m/.test(text), "should show the elapsed time, got: " + text);
+		assert.ok(/Process uptime:/.test(text), "should include process uptime");
+	});
+
+	await test("uptime: aliases resolve to the command", () => {
+		assert.ok(registry.resolve("up"), "alias 'up' should resolve");
+		assert.ok(registry.resolve("runtime"), "alias 'runtime' should resolve");
 	});
 
 	await test("auth: pushes bot cookies to POST /cookies before connecting", async () => {
