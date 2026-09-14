@@ -38,13 +38,34 @@ module.exports = {
 		if (Array.isArray(settings.threadIDs) && settings.threadIDs.length &&
 			!settings.threadIDs.map(String).includes(String(threadID))) return;
 
-		// Prefer explicit ids; fall back to the usernames an action_log event
-		// carries (Instagram exposes the affected member as @handles there).
+		// Instagram's action_log carries the affected member as an @handle in
+		// `usernames`; some payloads also carry numeric ids. Greet by USERNAME,
+		// not the numeric id, so the welcome reads "@someone" rather than a long
+		// number.
+		//
+		// `senderID`/`userID` in a membership event is the ACTOR (who added the
+		// member), NOT the member — using it as a fallback greeted the actor as
+		// well. Only `participantID`/`userIDs` name the affected member.
 		const usernames = Array.isArray(event.usernames) ? event.usernames.map(String).filter(Boolean) : [];
-		let userIDs = (event.userIDs && event.userIDs.length ? event.userIDs : [event.participantID || event.senderID || event.userID])
+		const ids = (event.userIDs && event.userIDs.length
+			? event.userIDs
+			: (event.participantID ? [event.participantID] : []))
 			.filter(Boolean).map(String);
-		if (!userIDs.length && usernames.length) userIDs = usernames.map(name => name);
-		if (!userIDs.length) return;
+
+		if (!usernames.length && !ids.length) return;
+
+		// One entry per affected member: a known handle when we have one, else
+		// the numeric id to be resolved to a username below.
+		const targets = [];
+		for (const name of usernames) targets.push({ username: name, userID: null });
+		for (const id of ids) {
+			if (targets.some(t => t.userID === id)) continue;
+			// Skip an id whose username we already have from the same event only
+			// when they are provably the same member; otherwise keep both and
+			// dedupe after resolving.
+			targets.push({ username: null, userID: id });
+		}
+		if (!targets.length) return;
 
 		const thread = threadsData.get(threadID) || {};
 		let threadName = thread.name;
@@ -59,31 +80,37 @@ module.exports = {
 		}
 
 		const template = settings.message || "Welcome %1 to %2! 👋";
+		const seen = new Set();
 
-		for (const userID of userIDs) {
-			if (usernames.includes(userID)) {
+		for (const target of targets) {
+			let username = target.username;
+			let display = null;
+
+			// Resolve a numeric id to its username so the greet never shows an id.
+			if (!username && target.userID) {
 				try {
-					await message.send(fill(template, [userID, threadName || threadID]));
+					const info = await new Promise((resolve, reject) =>
+						api.getUserInfo(target.userID, (error, result) => error ? reject(error) : resolve(result)));
+					const profile = info && info[target.userID];
+					username = (profile && (profile.vanity || profile.username)) || null;
+					display = profile && (profile.name || profile.firstName) || null;
 				}
-				catch (error) {
-					log.warn("JOIN", `Could not welcome ${userID}: ${error.message}`);
-				}
-				continue;
+				catch (_) { /* fall back below */ }
 			}
-			let name = null;
-			try {
-				const info = await new Promise((resolve, reject) =>
-					api.getUserInfo(userID, (error, result) => error ? reject(error) : resolve(result)));
-				const profile = info && info[userID];
-				name = profile && (profile.name || profile.firstName || profile.vanity);
-			}
-			catch (_) { /* name is optional */ }
+
+			// Prefer the username; keep the full name only as a last resort so a
+			// lookup that returns nothing still greets a human rather than a number.
+			const handle = username ? "@" + String(username).replace(/^@/, "") : null;
+			const mention = handle || display || target.userID;
+			if (!mention) continue;
+			if (seen.has(mention)) continue;
+			seen.add(mention);
 
 			try {
-				await message.send(fill(template, [name || userID, threadName || threadID]));
+				await message.send(fill(template, [mention, threadName || threadID]));
 			}
 			catch (error) {
-				log.warn("JOIN", `Could not welcome ${userID}: ${error.message}`);
+				log.warn("JOIN", `Could not welcome ${mention}: ${error.message}`);
 			}
 		}
 	}

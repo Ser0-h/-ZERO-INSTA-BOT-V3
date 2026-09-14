@@ -43,6 +43,14 @@ function ensureStateFile(config) {
 function persistState() {
 	if (!stateFile) return;
 	try {
+		// Drop sessions that have been idle past the TTL so both the Map and the
+		// on-disk snapshot stay bounded on a long-running bot. getSession() already
+		// resets a stale session's history on reuse, so removing it here loses
+		// nothing.
+		const now = Date.now();
+		for (const [key, session] of sessions) {
+			if (now - (session.lastActive || 0) > HISTORY_TTL_MS) sessions.delete(key);
+		}
 		const snapshot = {};
 		for (const [key, session] of sessions.entries()) {
 			snapshot[key] = {
@@ -204,8 +212,12 @@ async function generateAndSend({ message, session, key, userText, setReplyHandle
 
 	const reaction = await resolveReaction(session, userText);
 	const delay = humanDelay(replyText);
-	try { message.typing(); } catch (_) { }
+	// Keep the stop function: leaving the indicator running makes it stick until
+	// the reply implicitly clears it.
+	let stopTyping = null;
+	try { stopTyping = message.typing(); } catch (_) { }
 	await sleep(delay);
+	try { if (typeof stopTyping === "function") stopTyping(); } catch (_) { }
 
 	const sent = await message.reply(replyText);
 	pushHistory(session, "assistant", replyText);

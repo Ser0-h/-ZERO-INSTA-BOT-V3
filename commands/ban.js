@@ -22,7 +22,7 @@ module.exports = {
 		usage: { en: "{p}ban [userID] [reason] | {p}unban [userID]" }
 	},
 
-	onStart: async function ({ message, args, event, config, commandName, usersData }) {
+	onStart: async function ({ message, args, event, config, commandName, invokedAs, usersData }) {
 		const lang = config.language;
 		const { id, reason } = resolveTarget(args, event);
 		if (!id)
@@ -30,7 +30,9 @@ module.exports = {
 
 		usersData.ensure(id, { userID: id });
 
-		if (commandName === "unban") {
+		// Branch on the alias the user typed: commandName is always "ban", so an
+		// `unban` invocation must be recognised via invokedAs or it would re-ban.
+		if ((invokedAs || commandName) === "unban") {
 			usersData.update(id, { banned: { status: false, reason: null, date: null } });
 			return message.reply(t(lang, "unbanSuccess", id));
 		}

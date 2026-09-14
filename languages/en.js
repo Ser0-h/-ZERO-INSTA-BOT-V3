@@ -55,6 +55,7 @@ module.exports = {
 	echoEmpty: "Give me something to say.",
 	prefixCurrent: "The current prefix is: %1",
 	prefixChanged: "Prefix changed to: %1",
+	prefixOnlyAdmin: "The current prefix is: %1\nOnly bot admins can change it.",
 	avatarChanged: "Profile picture updated.",
 	avatarFailed: "Could not change the profile picture.",
 	bioChanged: "Bio updated.",

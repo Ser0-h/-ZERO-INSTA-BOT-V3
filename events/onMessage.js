@@ -10,7 +10,9 @@ module.exports = {
 	config: {
 		name: "onMessage",
 		category: "system",
-		eventType: "message"
+		// Both a plain message and a reply count as activity; an earlier config
+		// listed only "message", so replies never updated lastActivity/members.
+		eventType: ["message", "message_reply"]
 	},
 
 	onEvent: async function ({ event, threadsData }) {

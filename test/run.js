@@ -11,8 +11,19 @@
 
 const assert = require("assert");
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
 
 const root = path.resolve(__dirname, "..");
+
+// Redirect config writes to a scratch copy BEFORE anything requires src/config.
+// Several commands call saveConfig() (admin, whitelist, prefix); without this a
+// test run overwrites the operator's real config.json.
+const SCRATCH_CONFIG = path.join(os.tmpdir(), "instabot-test-config-" + process.pid + ".json");
+try { fs.copyFileSync(path.join(root, "config.json"), SCRATCH_CONFIG); } catch (_) { fs.writeFileSync(SCRATCH_CONFIG, "{}"); }
+process.env.IG_CONFIG_PATH = SCRATCH_CONFIG;
+process.on("exit", () => { try { fs.unlinkSync(SCRATCH_CONFIG); } catch (_) { } });
+
 const log = require(path.join(root, "src/logger"));
 log.setQuiet(true);
 
@@ -208,21 +219,13 @@ async function main() {
 		// Model A: one shared server. url + token are global and intentionally
 		// committed, so a fork works out of the box. What must NOT be committed
 		// is a personal admin id — that is per-deployment.
-		const { loadConfig } = require(path.join(root, "src/config"));
-		const urlBefore = process.env.IG_API_SERVER;
-		const tokenBefore = process.env.IG_API_TOKEN;
-		delete process.env.IG_API_SERVER;
-		delete process.env.IG_API_TOKEN;
-		try {
-			const config = loadConfig();
-			assert.match(config.server.url, /^https?:\/\//, "config.json must ship the shared server url");
-			assert.ok(config.server.token.length > 0, "config.json must ship the shared server token");
-			assert.deepStrictEqual(config.adminBot, [], "config.json must not ship a personal admin id");
-		}
-		finally {
-			if (urlBefore !== undefined) process.env.IG_API_SERVER = urlBefore;
-			if (tokenBefore !== undefined) process.env.IG_API_TOKEN = tokenBefore;
-		}
+		//
+		// Read config.json directly (not loadConfig, which points at the test's
+		// scratch copy) so this asserts what is actually committed to the repo.
+		const committed = JSON.parse(fs.readFileSync(path.join(root, "config.json"), "utf8"));
+		assert.match(committed.server.url, /^https?:\/\//, "config.json must ship the shared server url");
+		assert.ok(committed.server.token.length > 0, "config.json must ship the shared server token");
+		assert.deepStrictEqual(committed.adminBot, [], "config.json must not ship a personal admin id");
 	});
 
 	await test("config: IG_ADMIN_BOT sets per-deployment admins", () => {
@@ -1106,8 +1109,38 @@ async function main() {
 		assert.strictEqual(changed, "https://example.com/pic.jpg");
 	});
 
-	await test("prefix: runs without the prefix for a bot admin", async () => {
+	await test("ban: an admin bans and then unbans the same user", async () => {
+		// Regression: ban.js branched on commandName, which is always the
+		// canonical "ban", so `-unban <id>` re-ran the ban path and re-banned.
 		const api = fakeApi();
+		const db = makeDatabase();
+		db.users.ensure("123", { userID: "123" });
+		await runCommand("-ban 123 spamming", { api, db, config: makeConfig() });
+		assert.strictEqual(db.users.get("123").banned.status, true, "ban must set the flag");
+		await runCommand("-unban 123", { api, db, config: makeConfig() });
+		assert.strictEqual(db.users.get("123").banned.status, false, "unban must clear the flag");
+	});
+
+	await test("dispatcher: a banned user cannot drive a reply handler", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		db.users.set("5", { userID: "5", banned: { status: true, reason: "x" } });
+		const config = makeConfig();
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		let ran = false;
+		// Register a handler keyed to the message the banned user replies to.
+		dispatcher.registerOnReply("target-1", "ai", async () => { ran = true; });
+		await dispatcher.handle({
+			type: "message_reply", threadID: "t", messageID: "m", senderID: "5",
+			body: "hello", isGroup: false,
+			messageReply: { messageID: "target-1", senderID: "100", body: "hi", attachments: [] }
+		});
+		assert.strictEqual(ran, false, "a banned user must not drive a reply handler");
+		const reply = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.ok(/banned/i.test(reply), "the banned user should be told, got: " + JSON.stringify(reply));
+	});
+
+	await test("prefix: runs without the prefix for a bot admin", async () => {		const api = fakeApi();
 		const db = makeDatabase();
 		const config = makeConfig({ prefix: "!", adminBot: ["999"] });
 		const dispatcher = createDispatcher({ api, config, registry, database: db });
@@ -1116,13 +1149,40 @@ async function main() {
 		assert.ok(/current prefix/i.test(reply), "expected the current prefix");
 	});
 
-	await test("prefix: bare invocation from a normal user is ignored", async () => {
+	await test("prefix: bare invocation from a normal user shows the prefix", async () => {
+		// Regression: the command was bot-admin-only (role 2) and its bare form
+		// was gated to admins, so a normal user typing `prefix` got NOTHING.
+		// Everyone must be able to READ the prefix; only admins may change it.
 		const api = fakeApi();
 		const db = makeDatabase();
 		const config = makeConfig({ prefix: "!", adminBot: ["999"] });
 		const dispatcher = createDispatcher({ api, config, registry, database: db });
 		await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "prefix", isGroup: false });
-		assert.strictEqual(api.calls.filter(c => c.method === "sendMessage").length, 0);
+		const reply = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.ok(/current prefix/i.test(reply), "a normal user must see the prefix, got: " + JSON.stringify(reply));
+		assert.ok(reply.includes("!"), "the reply must include the actual prefix");
+	});
+
+	await test("prefix: a normal user cannot change the prefix", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const config = makeConfig({ prefix: "!", adminBot: ["999"] });
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "prefix ~", isGroup: false });
+		const reply = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.strictEqual(config.prefix, "!", "a normal user must not change the prefix");
+		assert.ok(/Only bot admins can change it/i.test(reply), "expected the admin-only notice, got: " + JSON.stringify(reply));
+	});
+
+	await test("prefix: a bot admin changes the prefix", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const config = makeConfig({ prefix: "!", adminBot: ["999"] });
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "999", body: "prefix ~", isGroup: false });
+		const reply = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.strictEqual(config.prefix, "~", "the admin change must take effect");
+		assert.ok(/Prefix changed/i.test(reply), "expected the change confirmation, got: " + JSON.stringify(reply));
 	});
 
 	await test("dispatcher: suggests a close command on a typo", async () => {
@@ -1983,6 +2043,21 @@ async function main() {
 		assert.ok(api.calls.some(c => c.method === "addUserToThread" && c.uid === "555"), "should treat the resolved group correctly");
 	});
 
+	await test("welcome event: greets only the added member, never the actor", async () => {
+		// Regression: the id fallback included senderID, which in a membership
+		// event is the ACTOR who added the member — so both were welcomed.
+		const api = fakeApi();
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "join", threadID: "g", isGroup: true,
+			usernames: ["newmember"], userIDs: [], senderID: "999", userID: "999"
+		});
+		const bodies = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.ok(bodies.some(b => /Welcome @newmember/.test(b)), JSON.stringify(bodies));
+		assert.ok(!bodies.some(b => /999/.test(b)), "the actor must not be welcomed: " + JSON.stringify(bodies));
+	});
+
 	await test("welcome event: greets a member added via action_log usernames", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
@@ -1992,7 +2067,24 @@ async function main() {
 			usernames: ["arobrifat"], userIDs: []
 		});
 		const bodies = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
-		assert.ok(bodies.some(b => /Welcome arobrifat/.test(b)), JSON.stringify(bodies));
+		assert.ok(bodies.some(b => /Welcome @arobrifat/.test(b)), JSON.stringify(bodies));
+	});
+
+	await test("welcome event: greets an added member by username, not numeric id", async () => {
+		// The join event often carries only a numeric id; the greeting must
+		// resolve it to the username (@handle), never print the raw id.
+		const api = fakeApi({
+			getUserInfo: (id, cb) => cb(null, { [id]: { userID: id, vanity: "arobrifat", name: "Aro Brifat" } })
+		});
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "join", threadID: "g", isGroup: true,
+			usernames: [], userIDs: ["56517826793"]
+		});
+		const bodies = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.ok(bodies.some(b => /Welcome @arobrifat/.test(b)), JSON.stringify(bodies));
+		assert.ok(!bodies.some(b => /56517826793/.test(b)), "the numeric id must not be shown: " + JSON.stringify(bodies));
 	});
 
 	await test("leave event: announces a member removed via action_log usernames", async () => {
@@ -2004,7 +2096,22 @@ async function main() {
 			usernames: ["arobrifat"], userIDs: []
 		});
 		const bodies = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
-		assert.ok(bodies.some(b => /arobrifat left/.test(b)), JSON.stringify(bodies));
+		assert.ok(bodies.some(b => /@arobrifat left/.test(b)), JSON.stringify(bodies));
+	});
+
+	await test("leave event: announces a removed member by username, not numeric id", async () => {
+		const api = fakeApi({
+			getUserInfo: (id, cb) => cb(null, { [id]: { userID: id, vanity: "arobrifat", name: "Aro Brifat" } })
+		});
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "leave", threadID: "g", isGroup: true,
+			usernames: [], userIDs: ["56517826793"]
+		});
+		const bodies = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.ok(bodies.some(b => /@arobrifat left/.test(b)), JSON.stringify(bodies));
+		assert.ok(!bodies.some(b => /56517826793/.test(b)), "the numeric id must not be shown: " + JSON.stringify(bodies));
 	});
 
 	await test("avatarEffect: sends the effect name so the server adds no sticker id", async () => {

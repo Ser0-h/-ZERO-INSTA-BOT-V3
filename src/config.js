@@ -9,8 +9,21 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const configPath = path.join(ROOT, "config.json");
-const accountPath = path.join(ROOT, "account.txt");
+// IG_CONFIG_PATH lets tests (and unusual deployments) point at a scratch config
+// instead of the repo's config.json — otherwise a command that calls saveConfig
+// (e.g. `prefix`) would overwrite the operator's real file during a test run.
+// Resolved per call so the override can be set at any time.
+function configPathFor() {
+	return process.env.IG_CONFIG_PATH
+		? path.resolve(process.env.IG_CONFIG_PATH)
+		: path.join(ROOT, "config.json");
+}
+function accountPathFor() {
+	return process.env.IG_ACCOUNT_PATH
+		? path.resolve(process.env.IG_ACCOUNT_PATH)
+		: path.join(ROOT, "account.txt");
+}
+const accountPath = accountPathFor();
 
 function readJSON(file) {
 	const raw = fs.readFileSync(file, "utf8");
@@ -23,9 +36,9 @@ function readJSON(file) {
 }
 
 function loadConfig() {
-	if (!fs.existsSync(configPath))
+	if (!fs.existsSync(configPathFor()))
 		throw new Error("config.json not found");
-	const config = readJSON(configPath);
+	const config = readJSON(configPathFor());
 
 	config.botName = config.botName || "InstaBOT";
 	config.prefix = typeof config.prefix === "string" ? config.prefix : "-";
@@ -110,7 +123,7 @@ function loadConfig() {
 }
 
 function saveConfig(config) {
-	fs.writeFileSync(configPath, JSON.stringify(config, null, "\t") + "\n");
+	fs.writeFileSync(configPathFor(), JSON.stringify(config, null, "\t") + "\n");
 }
 
 function isNetScapeCookie(text) {
@@ -170,12 +183,12 @@ function normalizeCookies(list) {
  * Accepts: JSON array, JSON object, cookie header string, Netscape file.
  */
 function loadAccount() {
-	if (!fs.existsSync(accountPath))
+	if (!fs.existsSync(accountPathFor()))
 		throw new Error(
 			"account.txt not found. Copy account.example.txt to account.txt and paste your Instagram cookies. " +
 			"It is git-ignored, so your cookies are never committed."
 		);
-	const text = fs.readFileSync(accountPath, "utf8").trim();
+	const text = fs.readFileSync(accountPathFor(), "utf8").trim();
 	if (!text) throw new Error("account.txt is empty");
 
 	let cookies = [];
@@ -210,8 +223,8 @@ function loadAccount() {
 
 module.exports = {
 	ROOT,
-	configPath,
-	accountPath,
+	get configPath() { return configPathFor(); },
+	get accountPath() { return accountPathFor(); },
 	loadConfig,
 	saveConfig,
 	loadAccount,

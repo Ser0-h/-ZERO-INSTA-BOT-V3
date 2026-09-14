@@ -190,6 +190,10 @@ function createDispatcher({ api, config, registry, database }) {
 			event,
 			args,
 			commandName,
+			// The name the user actually typed (an alias like `unban`), which is
+			// what a command with several aliases must branch on. `commandName`
+			// is always the canonical name (e.g. `ban`).
+			invokedAs: name,
 			role,
 			usersData: database.users,
 			threadsData: database.threads,
@@ -236,6 +240,16 @@ function createDispatcher({ api, config, registry, database }) {
 		// A handler that wants to keep a conversation going re-arms a new handler
 		// via setReplyHandler (the AI command does this), so nothing is lost.
 		onReply.delete(String(repliedID));
+
+		// A banned user must not drive an armed handler (AI chat, sing/roll pick…)
+		// just because they replied instead of typing a command. Consume the
+		// handler and drop the turn, mirroring how runCommands refuses the ban.
+		if (userData && userData.banned && userData.banned.status) {
+			if (!config.hideNotiMessage.userBanned)
+				await message.reply(t(config.language, "userBanned", config.botName, userData.banned.reason || "—"));
+			return true;
+		}
+
 		try {
 			await entry.handler({
 				api,
@@ -273,6 +287,8 @@ function createDispatcher({ api, config, registry, database }) {
 	async function runReactionHandlers(event, message, threadData, userData) {
 		const entry = onReaction.get(String(event.messageID));
 		if (!entry) return false;
+		// Same ban rule as a reply: a banned user cannot drive an armed handler.
+		if (userData && userData.banned && userData.banned.status) return true;
 		try {
 			await entry.handler({
 				api,
@@ -306,7 +322,13 @@ function createDispatcher({ api, config, registry, database }) {
 
 	async function runEventScripts(event, message, threadData, userData) {
 		for (const script of registry.events) {
-			if (script.config.eventType && script.config.eventType !== event.type) continue;
+			// eventType may be a single type or an array of them (e.g. onMessage
+			// listens to both "message" and "message_reply").
+			const wanted = script.config.eventType;
+			if (wanted) {
+				const list = Array.isArray(wanted) ? wanted : [wanted];
+				if (!list.includes(event.type)) continue;
+			}
 			try {
 				await script.onEvent({ api, message, event, usersData: database.users, threadsData: database.threads, userData, threadData, config, role: roleOf(event, threadData) });
 			}

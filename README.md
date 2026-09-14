@@ -11,7 +11,7 @@ events, roles, cooldowns and pluggable custom commands.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-3ddc84)
-![Tests](https://img.shields.io/badge/tests-111%20passing-3ddc84)
+![Tests](https://img.shields.io/badge/tests-145%20passing-3ddc84)
 
 [![View](https://img.shields.io/badge/View-Insta--Bot-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot)
 [![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot/fork)
@@ -50,6 +50,27 @@ Your star is not required to use it — but it is the fuel that keeps it maintai
 - **Ban / whitelist / admin-only** controls
 - **Online journal** — one JSON line per interval so you can watch uptime
 - **No dashboard, no database server** — just JSON files and a cloud-friendly runtime
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <img src="assets/screenshots/Screenshot-20260914-183310-Instagram.png" alt="Uptime and host status report" />
+      <p align="center"><sub><b>Runtime status</b> — <code>-uptime</code> reports uptime, host, memory and Node version without leaving the chat.</sub></p>
+    </td>
+    <td width="33%" valign="top">
+      <img src="assets/screenshots/Screenshot-20260914-183322-Instagram.png" alt="Adding a member and the automatic welcome message" />
+      <p align="center"><sub><b>Membership</b> — <code>-adduser</code> adds a member and the <code>join</code> event greets them automatically.</sub></p>
+    </td>
+    <td width="33%" valign="top">
+      <img src="assets/screenshots/Screenshot-20260914-183344-Instagram.png" alt="Music search results and the sent music sticker" />
+      <p align="center"><sub><b>Music stickers</b> — <code>-sing</code> searches, lists numbered picks and sends the chosen track.</sub></p>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -324,7 +345,7 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 | `adduser` | `addtouser`, `addmember` | bot admin | Add a user to the current thread |
 | `removeuser` | `kick`, `removemember` | bot admin | Remove a user from the current thread |
 | `whitelist` | `wl` | bot admin | Manage the whitelist |
-| `prefix` | `setprefix` | bot admin | Change the prefix |
+| `prefix` | `setprefix` | user (view) / bot admin (change) | Show the prefix; bot admins can change it |
 | `avatar` | `setavatar`, `setavt` | bot admin | Change the bot avatar |
 | `bio` | `setbio`, `biography` | bot admin | Change the bot bio |
 | `cmd` | `command` | bot admin | Install / uninstall / load / reload / list commands |
@@ -347,7 +368,7 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 
 A few commands work **without** the prefix so you can never lock yourself out:
 
-- `prefix` — show the current prefix, or `prefix !` to change it.
+- `prefix` — anyone can run it to see the current prefix; a bot admin can run `prefix !` to change it.
 - The bot-admin commands (`admin`, `ban`, `adduser`, `removeuser`, `prefix`, `whitelist`, `cmd`,
   `avatar`, `bio`, `eval`, `shell`) also run without the prefix for **bot admins only**. Normal users
   still need the prefix.
@@ -512,13 +533,13 @@ added to a group and say goodbye when someone leaves. Configure them in `config.
 }
 ```
 
-- `%1` is the member, `%2` is the thread name (both resolved automatically).
+- `%1` is the member's **username** (`@handle`) when it can be resolved, `%2` is the thread name.
 - Leave `threadIDs` empty to announce in every group; list thread IDs to limit it.
 - Set `enable` to `false` to turn either one off.
 
 ```
-Welcome Alice to Test Group! 👋
-Alice left Test Group. 👋
+Welcome @alice to Test Group! 👋
+@alice left Test Group. 👋
 ```
 
 ---

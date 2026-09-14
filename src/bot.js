@@ -357,7 +357,11 @@ function createBot(config) {
 			if (typeof state.stopListening === "function") state.stopListening();
 		}
 		catch (_) { /* ignore */ }
-		if (state.restartTimer) clearInterval(state.restartTimer);
+		// Cancel BOTH timers: the periodic restart interval AND a one-shot
+		// listener retire/relogin timeout. Without clearing the latter, a callback
+		// could recreate the listener after stop().
+		if (state.restartTimer) { clearInterval(state.restartTimer); state.restartTimer = null; }
+		if (state.retireListener) { clearTimeout(state.retireListener); state.retireListener = null; }
 		database.flush();
 		// Deliberately DO NOT call api.logout() on shutdown.
 		//

@@ -38,13 +38,28 @@ module.exports = {
 		if (Array.isArray(settings.threadIDs) && settings.threadIDs.length &&
 			!settings.threadIDs.map(String).includes(String(threadID))) return;
 
-		// Prefer explicit ids; fall back to the usernames an action_log event
-		// carries (Instagram exposes the affected member as @handles there).
+		// Instagram's action_log carries the affected member as an @handle in
+		// `usernames`; some payloads also carry numeric ids. Announce by
+		// USERNAME, not the numeric id.
+		//
+		// `senderID`/`userID` in a membership event is the ACTOR (who removed the
+		// member), NOT the member — using it as a fallback announced the actor as
+		// well. Only `participantID`/`userIDs` name the affected member.
 		const usernames = Array.isArray(event.usernames) ? event.usernames.map(String).filter(Boolean) : [];
-		let userIDs = (event.userIDs && event.userIDs.length ? event.userIDs : [event.participantID || event.senderID || event.userID])
+		const ids = (event.userIDs && event.userIDs.length
+			? event.userIDs
+			: (event.participantID ? [event.participantID] : []))
 			.filter(Boolean).map(String);
-		if (!userIDs.length && usernames.length) userIDs = usernames.slice();
-		if (!userIDs.length) return;
+
+		if (!usernames.length && !ids.length) return;
+
+		const targets = [];
+		for (const name of usernames) targets.push({ username: name, userID: null });
+		for (const id of ids) {
+			if (targets.some(t => t.userID === id)) continue;
+			targets.push({ username: null, userID: id });
+		}
+		if (!targets.length) return;
 
 		const thread = threadsData.get(threadID) || {};
 		let threadName = thread.name;
@@ -59,27 +74,40 @@ module.exports = {
 		}
 
 		const template = settings.message || "%1 left %2. 👋";
+		const seen = new Set();
 
-		for (const userID of userIDs) {
-			// Prefer a stored name so we can still name someone who just left.
-			const stored = usersData.get(userID) || {};
-			let name = stored.name || stored.username || null;
-			if (!name && usernames.includes(userID)) name = userID;
-			if (!name) {
+		for (const target of targets) {
+			let username = target.username;
+			let display = null;
+
+			// A stored name lets us still name someone who just left.
+			if (!username && target.userID) {
+				const stored = usersData.get(target.userID) || {};
+				username = stored.username || null;
+				display = stored.name || null;
+			}
+			if (!username && target.userID) {
 				try {
 					const info = await new Promise((resolve, reject) =>
-						api.getUserInfo(userID, (error, result) => error ? reject(error) : resolve(result)));
-					const profile = info && info[userID];
-					name = profile && (profile.name || profile.firstName || profile.vanity);
+						api.getUserInfo(target.userID, (error, result) => error ? reject(error) : resolve(result)));
+					const profile = info && info[target.userID];
+					username = (profile && (profile.vanity || profile.username)) || username;
+					display = (profile && (profile.name || profile.firstName)) || display;
 				}
 				catch (_) { /* name is optional */ }
 			}
 
+			const handle = username ? "@" + String(username).replace(/^@/, "") : null;
+			const mention = handle || display || target.userID;
+			if (!mention) continue;
+			if (seen.has(mention)) continue;
+			seen.add(mention);
+
 			try {
-				await message.send(fill(template, [name || userID, threadName || threadID]));
+				await message.send(fill(template, [mention, threadName || threadID]));
 			}
 			catch (error) {
-				log.warn("LEAVE", `Could not announce ${userID}: ${error.message}`);
+				log.warn("LEAVE", `Could not announce ${mention}: ${error.message}`);
 			}
 		}
 	}
