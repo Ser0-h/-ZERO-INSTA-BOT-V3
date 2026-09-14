@@ -11,7 +11,7 @@ events, roles, cooldowns and pluggable custom commands.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-3ddc84)
-![Tests](https://img.shields.io/badge/tests-145%20passing-3ddc84)
+![Tests](https://img.shields.io/badge/tests-150%20passing-3ddc84)
 
 [![View](https://img.shields.io/badge/View-Insta--Bot-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot)
 [![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot/fork)
@@ -68,7 +68,7 @@ Your star is not required to use it — but it is the fuel that keeps it maintai
     </td>
     <td width="33%" valign="top">
       <img src="assets/screenshots/Screenshot-20260914-183344-Instagram.png" alt="Music search results and the sent music sticker" />
-      <p align="center"><sub><b>Music stickers</b> — <code>-sing</code> searches, lists numbered picks and sends the chosen track.</sub></p>
+      <p align="center"><sub><b>Music stickers</b> — <code>-music</code> searches, lists numbered picks and sends the chosen track.</sub></p>
     </td>
   </tr>
 </table>
@@ -260,7 +260,7 @@ locally and streamed to the server as bytes.
 | `env.token` / `env.url` | Optional secrets/endpoints; overridden by the environment |
 | `server.url` / `server.token` | Connect to a remote ig-chat-api server (skips cookies) |
 | `server.timeout` | Server request timeout in ms |
-| `music.enable` | Turn the `sing` music search on/off |
+| `music.enable` | Turn the song search (both `music` and `sing`) on/off |
 | `music.apiUrl` / `music.apiToken` | Your own music server (blank = use Instagram's catalogue) |
 | `account.proxy` / `account.userAgent` | Optional HTTP(S) proxy and UA |
 | `adminOnly` | Restrict the bot to admins |
@@ -321,6 +321,15 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 }
 ```
 
+Both song commands read the same `music.apiUrl`:
+
+- **`music`** (`stickermusic`, `sm`, `m`) attaches a 20-30s **Instagram music sticker** and needs the
+  IG audio cluster/asset id fields (`audioClusterID` / `audioAssetID`).
+- **`sing`** streams the **full song** as an audio attachment. It needs a downloadable URL on each
+  result, under any common key: `url`, `downloadUrl`, `audioUrl`, `previewUrl`, `streamUrl`, `link`,
+  `src` (or a nested object with a `url`/`src`). The server converts the audio to the `.m4a` format
+  Instagram accepts, so the API may return MP3, M4A or AAC.
+
 ---
 
 ## Commands
@@ -336,7 +345,8 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 | `echo` | `say` | user | Repeat text |
 | `effect` | `fx` | user | Power-up text effect |
 | `avatarfx` | `avfx`, `avatar-effect` | user | Avatar character effect |
-| `sing` | `music`, `song` | user | Search and send a music sticker |
+| `music` | `stickermusic`, `sm`, `m` | user | Search and send a song as an Instagram music sticker |
+| `sing` | — | user | Search and send the **full song** as audio |
 | `ai` | `ritchi`, `chatbot` | user | Conversational AI with memory; reply to continue |
 | `img` | `image`, `sendimg` | user | Send an image by URL |
 | `anisearch` | `anivid`, `animevid` | user | Send a random anime TikTok video |
@@ -358,8 +368,10 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 ```
 -effect fire Hello world
 -avatarfx laugh That was funny
--sing blinding lights
--sing 2              # send result #2 from the last search
+-music blinding lights      # search and send a 20-30s music sticker
+-music 2                    # send sticker #2 from the last search
+-sing blinding lights       # search and send the FULL song as audio
+-sing 2                     # send full song #2 from the last search
 -ai tell me a short story    # reply to the answer to keep chatting
 -adduser @friend              # add a user to this group
 -removeuser 123456789         # remove a user (or reply to their message)
