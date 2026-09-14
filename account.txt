@@ -1,17 +1,1 @@
-# Copy this file to account.txt and paste your Instagram cookies there.
-#
-# account.txt is git-ignored on purpose: cookies are a password. Never commit
-# them — if you deploy from GitHub, either keep account.txt out of the repo or
-# set the cookies as secrets on the host instead.
-#
-# Accepted formats:
-#
-#   1) Cookie header string:
-#      sessionid=XXXX; ds_user_id=YYYY; csrftoken=ZZZZ
-#
-#   2) Netscape cookie file (a Cookie-Editor export), pasted as-is.
-#
-#   3) JSON array of cookie objects:
-#      [{"key":"sessionid","value":"XXXX"},{"key":"ds_user_id","value":"YYYY"}]
-#
-# `sessionid` and `ds_user_id` are required.
+(use cookies in Netscape format)
