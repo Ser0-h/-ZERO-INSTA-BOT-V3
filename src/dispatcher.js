@@ -310,6 +310,34 @@ function createDispatcher({ api, config, registry, database }) {
 		});
 	}
 
+	/**
+	 * Decide whether a thread is a group. The transport reports `isGroup` when
+	 * it knows it; when the field is missing we check the event's participant
+	 * list, then a cached value, and finally ask the API once per thread.
+	 */
+	async function resolveThreadGroup(event, threadData) {
+		if (event.isGroup === true) return { isGroup: true, known: true };
+		if (event.isGroup === false) return { isGroup: false, known: true };
+		const members = new Set();
+		for (const list of [event.participantIDs, event.userIDs]) {
+			if (Array.isArray(list)) for (const id of list) if (id != null && String(id)) members.add(String(id));
+		}
+		if (members.size > 1) return { isGroup: true, known: true };
+		if (threadData.groupKnown) return { isGroup: threadData.isGroup === true, known: true };
+		try {
+			const info = await new Promise((resolve, reject) =>
+				api.getThreadInfo(event.threadID, (error, result) => error ? reject(error) : resolve(result)));
+			const isGroup = !!(info && (info.isGroup === true || Number(info.threadType) === 2 ||
+				(Array.isArray(info.participantIDs) && info.participantIDs.length > 2)));
+			database.threads.update(event.threadID, { isGroup, groupKnown: true, name: info && info.name || undefined });
+			return { isGroup, known: true };
+		}
+		catch (_) {
+			// Could not confirm: do not cache a guess, and treat as unknown.
+			return { isGroup: false, known: false };
+		}
+	}
+
 	async function handle(event) {
 		if (!event || !event.threadID) return;
 		const senderID = senderIDOf(event);
@@ -320,9 +348,16 @@ function createDispatcher({ api, config, registry, database }) {
 		const threadData = database.threads.ensure(event.threadID, { threadID: event.threadID });
 		let userData = null;
 		if (senderID) userData = database.users.ensure(senderID, { userID: senderID });
-		if (event.isGroup != null) threadData.isGroup = event.isGroup;
 
-		const message = createMessageContext({ api, event, log });
+		// Resolve the real thread type before any command or event script runs,
+		// and feed the answer back onto the event so join/leave scripts and
+		// group-only commands see the truth.
+		const group = await resolveThreadGroup(event, threadData);
+		event.isGroup = group.isGroup;
+		threadData.isGroup = group.isGroup;
+		if (group.known) threadData.groupKnown = true;
+
+		const message = createMessageContext({ api, event, log, config });
 
 		switch (event.type) {
 			case "message":

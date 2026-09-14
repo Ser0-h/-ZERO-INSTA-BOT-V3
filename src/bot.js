@@ -85,7 +85,41 @@ function normalizeEvent(event) {
 	if (normalized.senderID != null && normalized.userID == null) normalized.userID = normalized.senderID;
 	if (normalized.userID != null && normalized.senderID == null) normalized.senderID = normalized.userID;
 
+	// Membership changes (join/leave) may arrive under different names depending
+	// on the transport; normalize the participant lists every event script reads.
+	const added = firstArray(normalized.userIDs, normalized.addedParticipants, normalized.added_participants,
+		normalized.added_users, normalized.added_user_ids, normalized.usersAdded, normalized.users_added,
+		normalized.participantsAdded, normalized.participants_added);
+	const removed = firstArray(normalized.removedParticipants, normalized.removed_participants,
+		normalized.removed_users, normalized.removed_user_ids, normalized.left_users, normalized.usersRemoved,
+		normalized.users_removed, normalized.participantsRemoved, normalized.participants_removed);
+
+	if (normalized.type === "join" && !normalized.userIDs) normalized.userIDs = added || [];
+	if (normalized.type === "leave" && !normalized.userIDs) normalized.userIDs = removed || [];
+
+	// Infer a group thread when the API omitted isGroup: the realtime payload
+	// often does. A participant list with more than one member, or a legacy
+	// "thread:user" id, both mean a group.
+	if (normalized.isGroup !== true) {
+		const members = [...(added || []), ...(removed || []), ...(normalized.userIDs || []),
+			...(normalized.participantIDs || []), ...(normalized.participants || [])];
+		const unique = new Set(members.map(String).filter(Boolean));
+		const legacyGroup = String(normalized.threadID || "").includes(":");
+		const isMembership = normalized.type === "join" || normalized.type === "leave";
+		const looksGroup = Array.isArray(added) || Array.isArray(removed) ||
+			isMembership || legacyGroup || unique.size > 2;
+		if (looksGroup) normalized.isGroup = true;
+	}
+
 	return normalized;
+}
+
+// Return the first argument that is a non-empty array, else null.
+function firstArray(...candidates) {
+	for (const value of candidates) {
+		if (Array.isArray(value)) return value;
+	}
+	return null;
 }
 
 function createBot(config) {

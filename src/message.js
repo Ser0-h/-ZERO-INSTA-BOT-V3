@@ -7,6 +7,17 @@
 
 const utils = require("./utils");
 
+/** Avatar effect name (or numeric style) -> Instagram power_up_data style id. */
+const AVATAR_STYLES = { love: 1000, heart: 1000, angry: 1001, mad: 1001, laugh: 1002, lol: 1002, cry: 1003, sad: 1003 };
+function avatarStyleOf(effect) {
+	if (effect != null && typeof effect === "object") {
+		if (effect.style != null) return Number(effect.style);
+		effect = effect.name;
+	}
+	if (effect != null && /^\d+$/.test(String(effect))) return Number(effect);
+	return AVATAR_STYLES[String(effect).toLowerCase()] || 1000;
+}
+
 /**
  * Build the message helper for an event. It exposes:
  *   message.send(form)          send to the thread
@@ -20,7 +31,7 @@ const utils = require("./utils");
  * Media attachments are routed to sendImage / sendAudio / sendVideo based on
  * their type, and each media source may be a URL, path, Buffer or stream.
  */
-function createMessageContext({ api, event, log }) {
+function createMessageContext({ api, event, log, config }) {
 	const threadID = event.threadID;
 	const eventMessageID = event.messageID;
 
@@ -143,11 +154,22 @@ function createMessageContext({ api, event, log }) {
 
 		/** Avatar character text effect ("love", "angry", "laugh", "cry"). */
 		avatarEffect(text, effect, callback) {
-			if (typeof callback === "function")
-				return api.sendAvatarTextEffect(text, threadID, effect, callback);
-			return new Promise((resolve, reject) => {
-				api.sendAvatarTextEffect(text, threadID, effect, (error, result) => error ? reject(error) : resolve(result));
+			// Send the standard avatar power-up request: power_up_data
+			// style 1000..1003 plus an avatar sticker id. Instagram scopes the
+			// sticker id to the conversation (403 error_code 1545003 in any
+			// other thread), so when config.avatarEffects.stickers has an id for
+			// this thread the server is asked for that id with the effect's
+			// style. Otherwise the effect name is passed and the server uses its
+			// built-in id. Report the real error rather than downgrading.
+			const sticker = utils.resolveAvatarSticker(config, threadID, effect);
+			const target = sticker != null ? { style: avatarStyleOf(effect), attachmentFbid: sticker } : effect;
+
+			const attempt = new Promise((resolve, reject) => {
+				api.sendAvatarTextEffect(text, threadID, target, (error, result) => error ? reject(error) : resolve(result));
 			});
+			if (typeof callback === "function")
+				attempt.then(result => callback(null, result), error => callback(error));
+			return attempt;
 		},
 
 		/** Attach an Instagram music sticker. Accepts a track id or musicSearch result. */
