@@ -1750,7 +1750,7 @@ async function main() {
 		assert.ok(bodies.some(b => /arobrifat left/.test(b)), JSON.stringify(bodies));
 	});
 
-	await test("avatarEffect: sends the avatar power-up as-is when Instagram accepts it", async () => {
+	await test("avatarEffect: sends the effect name so the server adds no sticker id", async () => {
 		const calls = [];
 		const api = fakeApi({
 			sendAvatarTextEffect: (text, threadID, effect, cb) => { calls.push("avatar:" + effect); cb(null, { ok: true }); },
@@ -1762,43 +1762,26 @@ async function main() {
 		assert.deepStrictEqual(calls, ["avatar:laugh"]);
 	});
 
-	await test("avatarEffect: surfaces the Instagram refusal instead of downgrading", async () => {
+	await test("avatarEffect: surfaces a real failure instead of downgrading", async () => {
 		const calls = [];
 		const api = fakeApi({
-			sendAvatarTextEffect: (text, threadID, effect, cb) => { calls.push("avatar"); cb(new Error("Instagram refused the avatar effect for this thread (error_code 1545003).")); },
+			sendAvatarTextEffect: (text, threadID, effect, cb) => { calls.push("avatar"); cb(new Error("send failed")); },
 			sendTextEffect: () => { calls.push("text"); }
 		});
 		const message = createMessageContext({ api, event: { threadID: "g", messageID: "m", isGroup: true }, log });
-		await assert.rejects(message.avatarEffect("hello", "laugh"), /1545003/);
+		await assert.rejects(message.avatarEffect("hello", "laugh"), /send failed/);
 		assert.deepStrictEqual(calls, ["avatar"]);
 	});
 
-	await test("resolveAvatarSticker: one sticker id per thread, effect-independent", async () => {
-		const config = {
-			avatarEffects: {
-				stickers: {
-					"999": "1994444894604654",
-					"*": "2601937316988106"
-				}
-			}
-		};
-		// Same id for every effect in a mapped thread.
-		assert.strictEqual(utils.resolveAvatarSticker(config, "999", "angry"), "1994444894604654");
-		assert.strictEqual(utils.resolveAvatarSticker(config, "999", "love"), "1994444894604654");
-		// Fallback used for an unmapped thread.
-		assert.strictEqual(utils.resolveAvatarSticker(config, "123", "cry"), "2601937316988106");
-		// No mapping at all -> null so the server default is used.
-		assert.strictEqual(utils.resolveAvatarSticker({}, "123", "love"), null);
-	});
-
-	await test("avatarfx: reports the per-chat refusal in plain language", async () => {		const avatarfx = require(path.join(root, "commands/avatarfx"));
+	await test("avatarfx: works in a group with no sticker configuration", async () => {
+		const avatarfx = require(path.join(root, "commands/avatarfx"));
 		const replies = [];
 		const message = {
 			reply: (text) => { replies.push(text); },
-			avatarEffect: () => Promise.reject(new Error("Instagram refused the avatar effect for this thread (error_code 1545003)."))
+			avatarEffect: () => Promise.resolve({ ok: true })
 		};
 		await avatarfx.onStart({ message, args: ["laugh", "nice"] });
-		assert.ok(replies.some(r => /avatar effect/i.test(r) && /try again later/i.test(r)), JSON.stringify(replies));
+		assert.deepStrictEqual(replies, []);
 	});
 
 	/* ── summary ── */
