@@ -150,10 +150,13 @@ module.exports = {
 		}
 
 		// Try a few results: a video that is too large (or whose CDN link has
-		// expired) is common, and another candidate usually works.
+		// expired) is common, and another candidate usually works. Do NOT retry
+		// when the failure is about the account or the session — a second
+		// identical upload will fail the same way and just makes the user wait.
 		let lastError = null;
 		let lastUrl = null;
 		let oversize = 0;
+		let terminal = false;
 		for (const url of candidates.slice(0, MAX_ATTEMPTS)) {
 			try {
 				const video = await resolveVideo(url);
@@ -163,7 +166,12 @@ module.exports = {
 			}
 			catch (error) {
 				lastError = error;
-				if (/above the send limit|too large/i.test(describeError(error))) oversize++;
+				const text = describeError(error);
+				if (/above the send limit|too large/i.test(text)) oversize++;
+				if (/not authorized|notauthorizederror|challenged|timed out|rate.?limit|429/i.test(text)) {
+					terminal = true;
+					break;
+				}
 			}
 		}
 
@@ -177,9 +185,11 @@ module.exports = {
 		if (lastUrl) {
 			// The video was found and downloaded; only the upload failed. Send the
 			// link so the result is still useful, and say why the file did not go.
+			const hint = terminal
+				? "This is an account/session problem, not a bad video — open Instagram as this account and clear any prompt, then try again."
+				: "(If this keeps happening, the account is likely challenged — open Instagram and clear any prompt.)";
 			return message.reply(
-				`Found a video but Instagram refused the upload: ${detail}\n${lastUrl}\n` +
-				"(If this keeps happening, the account is likely challenged — open Instagram and clear any prompt.)"
+				`Found a video but Instagram refused the upload: ${detail}\n${lastUrl}\n${hint}`
 			);
 		}
 		return message.reply(`Could not find a video: ${detail}`);
