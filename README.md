@@ -31,6 +31,7 @@ If you find it useful, the best ways to say thanks:
 - ⭐ **[Star the repo](https://github.com/lazyneoaz/Insta-Bot/stargazers)** — it takes a second and really helps.
 - 🍴 **[Fork it](https://github.com/lazyneoaz/Insta-Bot/fork)** — build your own version and keep the credits intact.
 - 🐛 **[Open an issue](https://github.com/lazyneoaz/Insta-Bot/issues)** with bugs or ideas.
+- 💬 **[Join the support group on Instagram](https://ig.me/j/AbY6Ttx_acOoE6wA/)** — ask questions and get help from the community.
 
 Your star is not required to use it — but it is the fuel that keeps it maintained. Thank you! 🙏
 
@@ -602,6 +603,7 @@ result. It uses `config.server.url` + `config.server.token` when set, otherwise 
 
 - GitHub: [https://github.com/lazyneoaz](https://github.com/lazyneoaz)
 - Project: [InstaBOT](https://github.com/lazyneoaz/Insta-Bot)
+- Support group: [Join on Instagram](https://ig.me/j/AbY6Ttx_acOoE6wA/)
 - Powered by: [`ig-chat-api`](https://github.com/lazyneoaz/ig-chat-api) and [`ig-chat-api-server`](https://github.com/lazyneoaz/ig-chat-api-server)
 
 **Contributors:**
@@ -625,6 +627,7 @@ MIT © [Saifullah Al Neoaz](https://github.com/lazyneoaz) — see [LICENSE](LICE
 [![View](https://img.shields.io/badge/View-Insta--Bot-2ea44f?logo=github&style=for-the-badge)](https://github.com/lazyneoaz/Insta-Bot)
 [![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github&style=for-the-badge)](https://github.com/lazyneoaz/Insta-Bot/fork)
 [![Star](https://img.shields.io/github/stars/lazyneoaz/Insta-Bot?label=Star&logo=github&color=ffd33d&style=for-the-badge)](https://github.com/lazyneoaz/Insta-Bot/stargazers)
+[![Support group](https://img.shields.io/badge/Support%20group-Instagram-c13584?logo=instagram&style=for-the-badge)](https://ig.me/j/AbY6Ttx_acOoE6wA/)
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584?style=for-the-badge)](LICENSE)
 
