@@ -72,7 +72,10 @@ function fakeApi(overrides = {}) {
 		sendMusic: (threadID, track, cb) => { calls.push({ method: "sendMusic", threadID, track }); cb && cb(null, { threadID, messageID: "music" }); },
 		musicSearch: (query, cb) => {
 			calls.push({ method: "musicSearch", query });
-			cb && cb(null, { query, tracks: [{ title: "Song A", artist: "Artist A", durationMs: 210000, audioClusterID: "111" }, { title: "Song B", artist: "Artist B", durationMs: 180000, audioClusterID: "222" }] });
+			cb && cb(null, { query, tracks: [
+				{ title: "Song A", artist: "Artist A", durationMs: 210000, audioClusterID: "111", url: "https://cdn.example/song-a.mp4" },
+				{ title: "Song B", artist: "Artist B", durationMs: 180000, audioClusterID: "222", url: "https://cdn.example/song-b.mp4" }
+			] });
 		},
 		sendTypingIndicator: () => () => { },
 		changeProfilePicture: (src, cb) => { calls.push({ method: "changeProfilePicture", src }); cb && cb(null, {}); },
@@ -633,11 +636,30 @@ async function main() {
 		assert.ok(api.calls.some(c => c.method === "sendAudio" && c.src === "https://cdn.example/only.m4a"));
 	});
 
-	await test("sing: explains itself when no music server is configured", async () => {
+	await test("sing: falls back to Instagram and lists full songs when it has URLs", async () => {
+		// Instagram's search_v2 track carries progressive_download_url; the server
+		// surfaces it as `url`, so `sing` must list those songs.
 		const api = fakeApi();
 		const db = makeDatabase();
-		const out = await runCommand("-sing no server", { api, db, config: makeConfig() });
-		assert.ok(/music api|music\.apiUrl|search failed/i.test(out), "expected a clear configuration hint");
+		const out = await runCommand("-sing instagram song", { api, db, config: makeConfig() });
+		assert.ok(/1\./.test(out) && /2\./.test(out), "expected a numbered full-song list");
+		assert.ok(api.calls.some(c => c.method === "musicSearch" && c.query === "instagram song"), "expected the Instagram fallback");
+	});
+
+	await test("sing: sends the Instagram progressive URL as audio", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		db.users.set("999", { userID: "999", banned: { status: false }, settings: {}, data: { lastSong: { query: "x", tracks: [{ title: "A", artist: "B", url: "https://cdn.example/ig.mp4" }] } } });
+		await runCommand("-sing 1", { api, db, config: makeConfig() });
+		assert.ok(api.calls.some(c => c.method === "sendAudio" && c.src === "https://cdn.example/ig.mp4"), "expected the Instagram track URL to be streamed");
+	});
+
+	await test("sing: reports when Instagram returns no audio URL", async () => {
+		// A metadata-only result (no progressive URL) must not send junk.
+		const api = fakeApi({ musicSearch: (q, cb) => cb(null, { tracks: [{ title: "No Url", artist: "X", audioClusterID: "1" }] }) });
+		const db = makeDatabase();
+		const out = await runCommand("-sing no url somewhere", { api, db, config: makeConfig() });
+		assert.ok(/no full songs|no audio url|search failed/i.test(out), "expected a clear message");
 		assert.strictEqual(api.calls.filter(c => c.method === "sendAudio").length, 0);
 	});
 
