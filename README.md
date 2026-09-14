@@ -94,13 +94,13 @@ A `Dockerfile` is included. Both platforms can build it directly:
 | --- | --- | --- |
 | `IG_API_SERVER` | ✅ | Deployed ig-chat-api-server URL (e.g. `https://ig-server.onrender.com`) |
 | `IG_API_TOKEN` | ✅ | Must equal the server's `IG_TOKEN` |
-| `IG_BOT_ID` | ⚠️ for multi-bot | Which account this bot owns on the server (defaults to `default`) |
+| `IG_BOT_ID` | — | Override the session id. Leave unset: the bot uses its own Instagram account id |
 
-> **⚠️ Set the bot id.** If the server has cookies under one id (say `salesbot`)
-> but the bot connects as `default`, the server answers
-> `Unknown bot id "default"` and the bot cannot log in. Set `IG_BOT_ID` (or
-> `server.botId`) to the **exact** id the server loads. For a single-bot server
-> using `IG_COOKIES`, leave it `default`.
+> **No bot id to configure.** The server keys each session by the Instagram
+> account id (`ds_user_id` in the cookies), and the bot sends its own id
+> automatically — read from `account.txt` before login. So a bot always
+> reconnects to its own session. Set `IG_BOT_ID` (or `server.botId`) only if you
+> filed the session under a custom name (e.g. `accounts/salesbot.txt`).
 
 
 ---
@@ -120,7 +120,7 @@ Set both values (or the environment fallbacks) and the bot is ready:
 "server": {
   "url": "https://<your-server-host>",
   "token": "<IG_TOKEN from the server>",
-  "botId": "default",
+  "botId": "",
   "timeout": 60000
 }
 ```
@@ -134,22 +134,24 @@ server already has cookies, the bot's are simply ignored.
 > `IG_ACCOUNTS`, `IG_COOKIES` on the *server*) take priority; the bot's pushed
 > cookies are a fallback. Either model works — pick one place to manage them.
 
-`botId` picks which Instagram account this bot owns on a **multi-bot server**
-(the server loads `accounts/<botId>.txt`). Leave it `"default"` for a
-single-bot server, or set it to your bot's id (e.g. `"salesbot"`).
+`botId` selects which session this bot owns. Leave it **empty**: the bot sends
+its own Instagram account id (from `ds_user_id` in its cookies), which is exactly
+how the server names the session. Set it only to match a session you filed under
+a custom name (e.g. `"salesbot"`).
 
-> **⚠️ Set the bot id.** If the server has cookies under one id (say `salesbot`)
-> but the bot connects as `default`, the server answers
-> `Unknown bot id "default"` and the bot cannot log in. Set `IG_BOT_ID` (or
-> `server.botId`) to the **exact** id the server loads. For a single-bot server
-> using `IG_COOKIES` or a bot-pushed cookie, leave it `default`.
+> **⚠️ Only mismatch to avoid.** If you named the session on the server
+> (e.g. `accounts/salesbot.txt`), set the same `IG_BOT_ID=salesbot` here.
+> Otherwise leave `IG_BOT_ID` unset and the bot's account id lines up with the
+> session the server created from its cookies.
+
+> **⚠️ Which account runs.** Whatever the id, it must resolve to the cookies this
+> bot should use. With a single account and no explicit names, that is automatic.
 
 Environment fallbacks: `IG_API_SERVER`, `IG_API_TOKEN`, and `IG_BOT_ID`.
 
 ```bash
 IG_API_SERVER="https://<your-server-host>" \
 IG_API_TOKEN="<IG_TOKEN from the server>" \
-IG_BOT_ID="salesbot" \
 npm start
 ```
 
@@ -214,7 +216,7 @@ locally and streamed to the server as bytes.
 | `adminBot` | Array of user IDs with bot-admin rights |
 | `env.token` / `env.url` | Optional secrets/endpoints; overridden by the environment |
 | `server.url` / `server.token` | Connect to a remote ig-chat-api server (skips cookies) |
-| `server.botId` | Which account this bot owns on a multi-bot server (default `"default"`) |
+| `server.botId` | Session id. Leave empty to use the bot's own Instagram account id |
 | `server.timeout` | Server request timeout in ms |
 | `music.enable` | Turn the `sing` music search on/off |
 | `music.apiUrl` / `music.apiToken` | Your own music server (blank = use Instagram's catalogue) |
