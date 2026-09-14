@@ -834,10 +834,11 @@ async function main() {
 			return { ok: true, json: async () => ({ reply: "bby says hello" }) };
 		};
 		try {
-			const out = await runCommand("-bby hello", { api, db, config: makeConfig() });
+			const out = await runCommand("bby hello", { api, db, config: makeConfig() });
 			assert.strictEqual(out, "bby says hello");
 			assert.ok(requested && requested.includes("baby-apisx.vercel.app/baby"), "expected the baby API to be called");
 			assert.ok(registry.resolve("bby"), "bby must be registered");
+			assert.strictEqual(registry.resolve("bby").config.noPrefix, true, "bby must run without the prefix");
 		}
 		finally { global.fetch = originalFetch; }
 	});
