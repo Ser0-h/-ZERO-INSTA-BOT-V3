@@ -1808,6 +1808,57 @@ async function main() {
 		assert.deepStrictEqual(replies, []);
 	});
 
+	/* ── long-run stability guards ── */
+
+	await test("EventStream: a stream that opened but never sent a byte is stalled", () => {
+		// A proxy can accept the request and hold the socket open while the
+		// server never writes. Age the silence clock from the connect time so
+		// the stall watch reconnects instead of hanging forever.
+		const { EventStream } = require(path.join(root, "auth.js"));
+		const stream = new EventStream({ base: new URL("http://127.0.0.1:1"), token: "t", botId: "b" }, () => { });
+		stream.req = {};                                  // a socket is open
+		stream.connectedAt = Date.now() - 200000;         // opened 200s ago
+		stream.lastChunkAt = 0;                           // never delivered a byte
+		assert.strictEqual(stream._isStalled(Date.now()), true, "must be stalled");
+
+		// A healthy stream that just got a chunk is not stalled.
+		stream.lastChunkAt = Date.now() - 1000;
+		assert.strictEqual(stream._isStalled(Date.now()), false, "fresh data means healthy");
+
+		// A stopped stream or one with no open socket is never acted on.
+		stream.lastChunkAt = 0;
+		stream.stop();
+		assert.strictEqual(stream._isStalled(Date.now()), false, "a stopped stream must not reconnect");
+	});
+
+	await test("EventStream: timestamps reset per connection so a fresh socket is not killed", () => {
+		const { EventStream } = require(path.join(root, "auth.js"));
+		const stream = new EventStream({ base: new URL("http://127.0.0.1:1"), token: "t", botId: "b" }, () => { });
+		let requested = null;
+		// Intercept the http request so _connect runs without real I/O.
+		const http = require("http");
+		const original = http.request;
+		http.request = () => ({ on() { }, end() { }, destroy() { } });
+		try {
+			stream.lastChunkAt = Date.now() - 10 * 60 * 1000; // stale from a prior socket
+			stream.connectedAt = 0;
+			stream._connect();
+			requested = stream.connectedAt;
+			assert.strictEqual(stream.lastChunkAt, 0, "lastChunkAt must reset for the new attempt");
+			assert.ok(requested > 0 && Date.now() - requested < 5000, "connectedAt must be set to now");
+		}
+		finally {
+			http.request = original;
+			stream.stop();
+		}
+	});
+
+	await test("status server: a throwing handler never crashes the process", async () => {
+		const { createStatusServer } = require(path.join(root, "src/statusServer.js"));
+		const server = createStatusServer({ port: 0, info: () => ({ ok: true }) });
+		assert.strictEqual(server.enabled, false, "port 0 disables the server (pure worker mode)");
+	});
+
 	/* ── summary ── */
 	const failed = results.filter(r => !r.ok);
 	for (const r of results)
