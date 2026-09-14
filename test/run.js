@@ -786,6 +786,62 @@ async function main() {
 		}
 	});
 
+	await test("cmd: URL-only install derives the file name and replies", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const fileName = "autourl_" + Date.now().toString(36) + ".js";
+		const originalFetch = global.fetch;
+		const code = 'module.exports = { config: { name: "zzzautourl", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("url-only ok") };';
+		global.fetch = async () => ({ ok: true, text: async () => code });
+		try {
+			const out = await runCommand(`-cmd install https://example.com/${fileName}`, { api, db, config: makeConfig() });
+			assert.ok(/Installed "zzzautourl"/.test(out), "URL-only install should confirm success, got: " + out);
+			assert.ok(registry.resolve("zzzautourl"), "the URL-only command must be live");
+		}
+		finally {
+			global.fetch = originalFetch;
+			registry.unregisterCommand("zzzautourl");
+			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "commands", fileName)); } catch (_) { }
+		}
+	});
+
+	await test("cmd: URL install reports load errors and removes the broken file", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const fileName = "brokenurl_" + Date.now().toString(36) + ".js";
+		const originalFetch = global.fetch;
+		const code = 'const missing = require("module-that-does-not-exist"); module.exports = { config: { name: "zzzbrokeurl", category: "custom" }, onStart: async () => missing };';
+		global.fetch = async () => ({ ok: true, text: async () => code });
+		const dest = require("path").join(__dirname, "..", "commands", fileName);
+		try {
+			const out = await runCommand(`-cmd install https://example.com/${fileName}`, { api, db, config: makeConfig() });
+			assert.ok(/Install failed/i.test(out), "the dependency error must be reported, got: " + out);
+			assert.ok(!require("fs").existsSync(dest), "a failed install must not leave a broken file");
+		}
+		finally {
+			global.fetch = originalFetch;
+			try { require("fs").unlinkSync(dest); } catch (_) { }
+		}
+	});
+
+	await test("bby: uses the native API port without axios", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const originalFetch = global.fetch;
+		let requested = null;
+		global.fetch = async url => {
+			requested = String(url);
+			return { ok: true, json: async () => ({ reply: "bby says hello" }) };
+		};
+		try {
+			const out = await runCommand("-bby hello", { api, db, config: makeConfig() });
+			assert.strictEqual(out, "bby says hello");
+			assert.ok(requested && requested.includes("baby-apisx.vercel.app/baby"), "expected the baby API to be called");
+			assert.ok(registry.resolve("bby"), "bby must be registered");
+		}
+		finally { global.fetch = originalFetch; }
+	});
+
 	await test("cmd: URL install works with the name before the URL too", async () => {
 		// Regression: `-cmd install ai.js <url>` treated the URL itself as
 		// inline code and wrote the URL text as the file, so the bot failed
