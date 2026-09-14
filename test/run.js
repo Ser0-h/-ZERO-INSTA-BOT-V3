@@ -654,11 +654,90 @@ async function main() {
 	await test("uid: an @handle is resolved to that user's id only", async () => {
 		const api = fakeApi();
 		api.getUserInfo = (id, cb) => cb(null, { "424242": { userID: "424242", name: "Neo", vanity: "__neo.nnn" } });
+		const original = utils.download;
+		utils.download = async () => { throw new Error("no public lookup in this test"); };
 		const db = makeDatabase();
 		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
-		await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "-uid @__neo.nnn", isGroup: false });
+		try {
+			await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "-uid @__neo.nnn", isGroup: false });
+		}
+		finally {
+			utils.download = original;
+		}
 		const reply = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
 		assert.strictEqual(reply, "424242");
+	});
+
+	await test("uid: a profile URL resolves through the parsed username", async () => {
+		const api = fakeApi();
+		let looked = null;
+		api.getUserInfo = (id, cb) => { looked = id; cb(null, { "10402267946": { userID: "10402267946" } }); };
+		const original = utils.download;
+		utils.download = async () => { throw new Error("no public lookup in this test"); };
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		try {
+			await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "-uid https://www.instagram.com/chistyeee?stkn=bHk2cDAwd2RpOHh6", isGroup: false });
+		}
+		finally {
+			utils.download = original;
+		}
+		const reply = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.strictEqual(looked, "chistyeee", "the URL must be reduced to the username");
+		assert.strictEqual(reply, "10402267946");
+	});
+
+	await test("uid: a profile URL resolves through the public endpoint when the session cannot", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(new Error("handle lookup unsupported"));
+		const original = utils.download;
+		utils.download = async () => Buffer.from(JSON.stringify({ data: { user: { id: "555111" } } }));
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		try {
+			await dispatcher.handle({ type: "message", threadID: "t", messageID: "m", senderID: "5", body: "-uid https://www.instagram.com/chistyeee?stkn=bHk2cDAwd2RpOHh6", isGroup: false });
+		}
+		finally {
+			utils.download = original;
+		}
+		const reply = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
+		assert.strictEqual(reply, "555111");
+	});
+
+	await test("utils: instagramUsername parses URLs, handles and rejects paths", () => {
+		assert.strictEqual(utils.instagramUsername("https://www.instagram.com/chistyeee?stkn=abc"), "chistyeee");
+		assert.strictEqual(utils.instagramUsername("https://instagram.com/chistyeee/"), "chistyeee");
+		assert.strictEqual(utils.instagramUsername("instagram.com/chistyeee"), "chistyeee");
+		assert.strictEqual(utils.instagramUsername("@chistyeee"), "chistyeee");
+		assert.strictEqual(utils.instagramUsername("https://www.instagram.com/p/ABC123/"), null);
+		assert.strictEqual(utils.instagramUsername("https://www.instagram.com/stories/chistyeee/123/"), null);
+		assert.strictEqual(utils.instagramUsername("https://example.com/chistyeee"), null);
+		assert.strictEqual(utils.instagramUsername("chistyeee"), null);
+	});
+
+	await test("utils: resolveInstagramUserID reads the public web_profile_info", async () => {
+		const original = utils.download;
+		utils.download = async url => {
+			assert.ok(/web_profile_info\/\?username=chistyeee/.test(url), "expected the profile endpoint");
+			return Buffer.from(JSON.stringify({ data: { user: { id: "10402267946" } } }));
+		};
+		try {
+			assert.strictEqual(await utils.resolveInstagramUserID("chistyeee"), "10402267946");
+		}
+		finally {
+			utils.download = original;
+		}
+	});
+
+	await test("utils: resolveInstagramUserID returns null on failure", async () => {
+		const original = utils.download;
+		utils.download = async () => { throw new Error("network down"); };
+		try {
+			assert.strictEqual(await utils.resolveInstagramUserID("nobody"), null);
+		}
+		finally {
+			utils.download = original;
+		}
 	});
 
 	await test("avatar: uses an image from the replied message (largePreviewUrl)", async () => {

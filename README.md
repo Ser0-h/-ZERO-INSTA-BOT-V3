@@ -11,7 +11,7 @@ events, roles, cooldowns and pluggable custom commands.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-3ddc84)
-![Tests](https://img.shields.io/badge/tests-99%20passing-3ddc84)
+![Tests](https://img.shields.io/badge/tests-104%20passing-3ddc84)
 
 [![View](https://img.shields.io/badge/View-Insta--Bot-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot)
 [![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot/fork)
@@ -286,7 +286,7 @@ bare array; each entry needs at least an audio cluster/asset id plus a title.
 | `help` | `h`, `menu` | user | List commands and usage |
 | `ping` | `pong` | user | Online / latency check |
 | `uptime` | `up`, `runtime` | user | How long the bot has been running |
-| `uid` | `id` | user | Show user / thread ID |
+| `uid` | `id` | user | Show user / thread ID (numeric, `@handle`, or profile URL) |
 | `info` | `stats`, `about` | user | Bot stats and uptime |
 | `echo` | `say` | user | Repeat text |
 | `effect` | `fx` | user | Power-up text effect |
@@ -532,7 +532,7 @@ InstaBOT/
 ## Testing
 
 ```bash
-npm test                      # 99 unit tests, no credentials needed
+npm test                      # 104 unit tests, no credentials needed
 node test/live-send.js <tid>  # sends real DMs through the configured server
 ```
 

@@ -152,13 +152,76 @@ function isNumericID(value) {
 }
 
 /**
+ * Pull an Instagram username out of user input: a profile URL
+ * (https://www.instagram.com/name?…, /name/, /name), an @handle, or a bare
+ * handle. Returns the bare username, or null when the input is not a handle.
+ */
+function instagramUsername(input) {
+	if (input == null) return null;
+	let value = String(input).trim();
+	if (!value) return null;
+
+	if (/^https?:\/\//i.test(value) || /^(www\.)?instagram\.com\//i.test(value)) {
+		let url = value;
+		if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+		try {
+			const parsed = new URL(url);
+			if (!/(^|\.)instagram\.com$/i.test(parsed.hostname)) return null;
+			const segment = parsed.pathname.split("/").filter(Boolean)[0] || "";
+			const reserved = ["p", "reel", "reels", "stories", "explore", "tv", "accounts", "direct"];
+			if (!segment || reserved.includes(segment.toLowerCase())) return null;
+			return segment.replace(/^@/, "");
+		}
+		catch (_) {
+			return null;
+		}
+	}
+
+	if (/^@[A-Za-z0-9._]{1,30}$/.test(value)) return value.slice(1);
+
+	return null;
+}
+
+/**
+ * Resolve a username to an Instagram numeric user id via the public web
+ * profile endpoint. This needs no login and works even though the underlying
+ * ig-chat-api `getUserInfo` only accepts numeric ids.
+ */
+async function resolveInstagramUserID(username, timeout = 15000) {
+	if (!username) return null;
+	const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
+	const headers = {
+		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+		"Accept": "application/json, text/plain, */*",
+		"X-IG-App-ID": "936619743392459"
+	};
+	let buffer;
+	try {
+		// Reference through the exports so tests (and callers) can swap the
+		// transport without reaching into module internals.
+		buffer = await module.exports.download(url, { headers, timeout });
+	}
+	catch (_) {
+		return null;
+	}
+	try {
+		const data = JSON.parse(buffer.toString("utf8"));
+		const user = data && data.data && data.data.user;
+		return (user && user.id) ? String(user.id) : null;
+	}
+	catch (_) {
+		return null;
+	}
+}
+
+/**
  * Resolve a target user id from command arguments, in order: a reply, an
- * explicit numeric id, or an @handle (looked up on Instagram). Instagram
- * events do not carry a parsed mentions list, so a mention arrives as the
- * literal "@handle" text.
+ * explicit numeric id, then a username — given as an @handle, a bare handle,
+ * or an Instagram profile URL. Instagram events do not carry a parsed
+ * mentions list, so a mention arrives as the literal "@handle" text.
  *
  * Returns `{ id }` on success, else `{ id: null, username? }` where username
- * is set when an @handle was given but could not be found.
+ * is set when a handle was given but could not be found.
  */
 async function resolveUserTarget(args, event, api) {
 	if (event && event.messageReply && event.messageReply.senderID)
@@ -167,16 +230,21 @@ async function resolveUserTarget(args, event, api) {
 	const numeric = (args || []).find(arg => /^\d+$/.test(arg));
 	if (numeric) return { id: String(numeric), source: "id" };
 
-	const handle = (args || []).find(arg => /^@[A-Za-z0-9._]{1,30}$/.test(arg));
-	if (handle) {
-		const username = handle.replace(/^@/, "");
-		try {
-			const info = await new Promise((resolve, reject) =>
-				api.getUserInfo(username, (error, result) => error ? reject(error) : resolve(result)));
-			const profile = info && Object.values(info)[0];
-			if (profile && profile.userID) return { id: String(profile.userID), source: "mention" };
+	const raw = (args || []).find(arg => /^@?[A-Za-z0-9._]{1,30}$/.test(arg) || /instagram\.com\//i.test(arg));
+	const username = instagramUsername(raw);
+	if (username) {
+		// Prefer the logged-in session; fall back to the public endpoint.
+		if (api) {
+			try {
+				const info = await new Promise((resolve, reject) =>
+					api.getUserInfo(username, (error, result) => error ? reject(error) : resolve(result)));
+				const profile = info && Object.values(info)[0];
+				if (profile && profile.userID) return { id: String(profile.userID), source: "mention" };
+			}
+			catch (_) { }
 		}
-		catch (_) { }
+		const id = await resolveInstagramUserID(username);
+		if (id) return { id, source: "mention" };
 		return { id: null, username };
 	}
 
@@ -197,5 +265,7 @@ module.exports = {
 	randomString,
 	formatTime,
 	replaceArgs,
+	instagramUsername,
+	resolveInstagramUserID,
 	resolveUserTarget
 };
