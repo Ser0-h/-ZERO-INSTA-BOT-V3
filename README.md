@@ -111,6 +111,16 @@ A `Dockerfile` is included. Both platforms can build it directly:
 > own Instagram id (`ds_user_id` in the cookies) and returns that id to the bot,
 > which adopts it automatically. There is no `IG_BOT_ID` and no `server.botId`.
 
+> **One server or many?** The url + token identify a *server*, not a user.
+>
+> - **Each user runs their own server** (a fork should do this): everyone sets
+>   their own `IG_API_SERVER` and `IG_API_TOKEN`.
+> - **One shared server for several accounts**: everyone uses the *same* url and
+>   token, and the server keeps sessions apart by the account id in each bot's
+>   cookies. The token is then a shared access password, not a personal secret.
+>
+> Either way a bot only ever drives the account whose cookies it pushed.
+
 ---
 
 ## Login
@@ -145,9 +155,8 @@ event stream and every request. **There is nothing to set for the session id.**
 > **Which cookies win?** The server's own sources (`accounts/<id>.txt`,
 > `IG_ACCOUNTS`, `IG_COOKIES` on the *server*) take priority; the bot's pushed
 > cookies are a fallback. Either model works — pick one place to manage them.
-> If you filed the server session under a custom name (`accounts/salesbot.txt`),
-> set the same name in the bot's environment as `IG_BOT_ID=salesbot`; otherwise
-> leave it unset.
+> There is no session id to set on the bot, even for a custom name: the server
+> reports the id it filed the cookies under and the bot adopts it.
 
 Environment fallbacks: `IG_API_SERVER`, `IG_API_TOKEN`.
 

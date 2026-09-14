@@ -162,10 +162,11 @@ function normalizeSettings(options) {
 	return {
 		base: parseServer(server),
 		token,
-		// Which session to address. Normally the server tells us the id in the
-		// /cookies reply and we adopt it here; until then, or when the bot has no
-		// cookies to push, an empty id lets the server use its single session.
-		botId: String(options.botId || process.env.IG_BOT_ID || "").trim(),
+		// The session id is never configured. We start with none and adopt the id
+		// the server assigns in its /cookies reply (see login()). Starting empty
+		// matters: a stale or inherited id must never be sent, or the bot could
+		// be filed on someone else's session before its own cookies are read.
+		botId: "",
 		timeout: Number(options.timeout) || 60000,
 		selfListen: options.selfListen === true || options.selfListen === "true"
 	};
@@ -229,6 +230,15 @@ function pushCookies(settings, cookies) {
 		const target = settings.base;
 		const lib = target.protocol === "https:" ? https : http;
 		const payload = JSON.stringify({ cookies });
+		const headers = {
+			"Content-Type": "application/json",
+			"Content-Length": Buffer.byteLength(payload),
+			Authorization: "Bearer " + settings.token
+		};
+		// Only claim a session id once the server has given us one. An empty
+		// header would be worse than none: the server must derive the id purely
+		// from these cookies, never inherit one.
+		if (settings.botId) headers["X-Bot-Id"] = settings.botId;
 		const req = lib.request({
 			protocol: target.protocol,
 			hostname: target.hostname,
@@ -236,12 +246,7 @@ function pushCookies(settings, cookies) {
 			path: "/cookies",
 			method: "POST",
 			agent: target.protocol === "https:" ? httpsAgent : httpAgent,
-			headers: {
-				"Content-Type": "application/json",
-				"Content-Length": Buffer.byteLength(payload),
-				Authorization: "Bearer " + settings.token,
-				"X-Bot-Id": settings.botId
-			},
+			headers,
 			timeout: settings.timeout
 		}, res => {
 			const chunks = [];
