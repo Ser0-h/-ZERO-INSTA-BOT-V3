@@ -1195,7 +1195,10 @@ async function main() {
 	});
 
 	/* ── multi-bot: bot id plumbing ── */
-	await test("auth: sends X-Bot-Id and scopes /events by botId", async () => {
+	await test("auth: adopts the server id and scopes later calls by it", async () => {
+		// The bot is never configured with an id. It posts its cookies, the
+		// server replies with the session id it assigned, and the bot uses that
+		// id for the event stream and every later call.
 		const auth = require(path.join(root, "auth"));
 		const http = require("http");
 		const seen = [];
@@ -1210,6 +1213,10 @@ async function main() {
 			req.on("data", c => { body += c; });
 			req.on("end", () => {
 				res.writeHead(200, { "Content-Type": "application/json" });
+				if (req.url === "/cookies") {
+					// The server derives the session id from the pushed cookies.
+					return res.end(JSON.stringify({ ok: true, result: { botId: "24268962575", accepted: true } }));
+				}
 				res.end(JSON.stringify({ ok: true, result: "123" }));
 			});
 		});
@@ -1217,16 +1224,23 @@ async function main() {
 		const port = server.address().port;
 		let stream = null;
 		try {
-			const api = await auth({ server: "http://127.0.0.1:" + port, token: "t", botId: "botA" });
+			const cookies = "sessionid=a; ds_user_id=24268962575; csrftoken=x";
+			const api = await auth({ server: "http://127.0.0.1:" + port, token: "t", cookies });
 			await api.getCurrentUserID();
 			stream = api.listenMqtt(() => { });
 			await new Promise(r => setTimeout(r, 150));
+
+			// The first cookie push must NOT claim an id of its own.
+			const push = seen.find(s => s.url === "/cookies");
+			assert.ok(push, "expected a /cookies push");
+			assert.strictEqual(push.botId, undefined, "the cookie push must not send X-Bot-Id");
+
 			const rpc = seen.find(s => s.url === "/rpc");
-			assert.strictEqual(rpc.botId, "botA", "rpc must carry X-Bot-Id");
+			assert.strictEqual(rpc.botId, "24268962575", "rpc must carry the adopted id");
 			const events = seen.find(s => s.url.startsWith("/events"));
 			assert.ok(events, "expected an /events request");
-			assert.strictEqual(events.botId, "botA", "events must carry X-Bot-Id");
-			assert.ok(/botId=botA/.test(events.url), "events URL must scope the bot id");
+			assert.strictEqual(events.botId, "24268962575", "events must carry the adopted id");
+			assert.ok(/botId=24268962575/.test(events.url), "events URL must scope the adopted id");
 		}
 		finally {
 			if (stream) stream();
@@ -1748,7 +1762,10 @@ async function main() {
 			req.on("end", () => {
 				seen.push({ url: req.url, botId: req.headers["x-bot-id"], body });
 				res.writeHead(200, { "Content-Type": "application/json" });
-				res.end(JSON.stringify({ ok: true, result: req.url === "/cookies" ? { accepted: true } : "123" }));
+				res.end(JSON.stringify({
+					ok: true,
+					result: req.url === "/cookies" ? { botId: "42", accepted: true } : "123"
+				}));
 			});
 		});
 		await new Promise(r => server.listen(0, "127.0.0.1", r));
@@ -1758,16 +1775,20 @@ async function main() {
 				{ key: "sessionid", value: "SID", domain: "instagram.com", path: "/" },
 				{ key: "ds_user_id", value: "42", domain: "instagram.com", path: "/" }
 			];
-			const api = await auth({ server: "http://127.0.0.1:" + port, token: "t", botId: "botA", cookies });
+			const api = await auth({ server: "http://127.0.0.1:" + port, token: "t", cookies });
 			assert.strictEqual(api.getCurrentUserID(), "123");
 			const push = seen.find(s => s.url === "/cookies");
 			assert.ok(push, "expected a POST /cookies");
-			assert.strictEqual(push.botId, "botA", "the push must carry X-Bot-Id");
+			// The bot starts with no id, so the push must not claim one.
+			assert.strictEqual(push.botId, undefined, "a fresh push must not carry X-Bot-Id");
 			const parsed = JSON.parse(push.body);
 			assert.ok(Array.isArray(parsed.cookies), "cookies must be sent as an array");
 			const idx = seen.findIndex(s => s.url === "/cookies");
 			const rpc = seen.findIndex(s => s.url === "/rpc");
 			assert.ok(idx < rpc, "cookies must be pushed before the first RPC");
+			// Later calls use the id the server reported.
+			const rpcReq = seen[rpc];
+			assert.strictEqual(rpcReq.botId, "42", "later calls must carry the adopted id");
 		}
 		finally { server.close(); }
 	});
