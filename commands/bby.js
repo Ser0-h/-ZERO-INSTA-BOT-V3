@@ -1,16 +1,4 @@
 "use strict";
-
-/**
- * bby — a native InstaBOT port of Goatbot-V2's bby command.
- *
- * Source requested by the project owner:
- * https://raw.githubusercontent.com/dipto-69008/Goat-Bot-V2/refs/heads/main/scripts/cmds/baby.js
- *
- * The original script depends on axios and GoatBot globals. This port uses
- * Node's built-in fetch and InstaBOT reply handlers, so it works without npm
- * dependencies or the GoatBot runtime.
- */
-
 const API_BASE = "https://noobs-api.top/dipto";
 const ALIASES = ["baby", "bbe", "babe", "sam"];
 const RANDOM_REPLIES = [
@@ -193,7 +181,7 @@ module.exports = {
 	config: {
 		name: "bby",
 		aliases: ALIASES,
-		author: "ArYAN / Neoaz port",
+		author: "DiPTO",
 		cooldown: 0,
 		role: 0,
 		noPrefix: true,
