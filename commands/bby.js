@@ -4,15 +4,15 @@
  * bby — a native InstaBOT port of Goatbot-V2's bby command.
  *
  * Source requested by the project owner:
- * https://raw.githubusercontent.com/lazyneoaz/Goatbot-V2/refs/heads/main/scripts/cmds/bby.js
+ * https://raw.githubusercontent.com/dipto-69008/Goat-Bot-V2/refs/heads/main/scripts/cmds/baby.js
  *
  * The original script depends on axios and GoatBot globals. This port uses
  * Node's built-in fetch and InstaBOT reply handlers, so it works without npm
  * dependencies or the GoatBot runtime.
  */
 
-const API_BASE = "https://baby-apisx.vercel.app";
-const ALIASES = ["baby", "jan", "suna"];
+const API_BASE = "https://noobs-api.top/dipto";
+const ALIASES = ["baby", "bbe", "babe", "sam"];
 const RANDOM_REPLIES = [
 	"Bolo baby 😚",
 	"Hum 😚",
@@ -92,6 +92,18 @@ async function runSpecial(message, event, args, usersData) {
 	const lower = raw.toLowerCase();
 	const uid = event.senderID;
 
+	if (lower.startsWith("remove ")) {
+		const key = raw.slice("remove ".length).trim();
+		if (!key) return "Usage: bby remove <message>";
+		return responseText(await getJson("/baby", { remove: key, senderID: uid }));
+	}
+
+	if (lower.startsWith("rm ")) {
+		const parts = raw.slice(3).split(/\s*-\s*/).map(item => item.trim());
+		if (parts.length < 2 || !parts[0] || !parts[1]) return "Usage: bby rm <message> - <index>";
+		return responseText(await getJson("/baby", { remove: parts[0], index: parts[1] }));
+	}
+
 	if (lower === "list") {
 		const data = await getJson("/baby", { list: "all" });
 		const total = data && data.length != null ? data.length : data && data.teacher && data.teacher.teacherList
@@ -120,12 +132,11 @@ async function runSpecial(message, event, args, usersData) {
 
 	if (lower.startsWith("edit ")) {
 		const parts = raw.slice(5).split(/\s*-\s*/).map(item => item.trim());
-		if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2])
-			return "❌ Use: bby edit <message> - <old reply> - <new reply>";
+		if (parts.length < 2 || !parts[0] || !parts[1])
+			return "❌ Use: bby edit <message> - <new reply>";
 		const data = await getJson("/baby", {
 			edit: parts[0],
-			oldReply: parts[1],
-			replace: parts[2],
+			replace: parts[1],
 			senderID: uid
 		});
 		return responseText(data);
@@ -169,6 +180,10 @@ async function runSpecial(message, event, args, usersData) {
 			threadID: event.threadID
 		});
 		return `✅ Replies added ${responseText(data)}\nTeacher: ${senderName(usersData, uid)}\nTeachs: ${data.teachs || "—"}`;
+	}
+
+	if (["amar name ki", "amr nam ki", "amar nam ki", "amr name ki", "whats my name"].includes(lower)) {
+		return responseText(await getJson("/baby", { text: "amar name ki", senderID: uid, key: "intro" }));
 	}
 
 	return null;
