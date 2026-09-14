@@ -925,6 +925,40 @@ async function main() {
 		});
 	});
 
+	/* ── help ── */
+	await test("help: lists every category with a text effect", async () => {
+		const command = registry.resolve("help");
+		assert.ok(command, "help should be registered");
+		let sent = null;
+		const message = { send: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		await command.onStart({ message, args: [], config: makeConfig(), registry });
+		const text = String(sent && sent.body);
+		assert.ok(/INSTABOT/.test(text), "should name the bot");
+		assert.ok(/INFO/.test(text), "should list the info category");
+		assert.ok(/× -help/.test(text), "should list commands with the prefix");
+		assert.ok(["love", "gift", "celebration", "fire"].includes(sent.effect), "should send with a random text effect");
+	});
+
+	await test("help: shows details for one command with a text effect", async () => {
+		const command = registry.resolve("help");
+		let sent = null;
+		const message = { send: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		await command.onStart({ message, args: ["ping"], config: makeConfig(), registry });
+		const text = String(sent && sent.body);
+		assert.ok(/Name: ping/.test(text), "should name the command");
+		assert.ok(/Usage: -ping/.test(text), "should render usage with the prefix");
+		assert.ok(["love", "gift", "celebration", "fire"].includes(sent.effect), "should send with a random text effect");
+	});
+
+	await test("help: an unknown command is reported plainly", async () => {
+		const command = registry.resolve("help");
+		let sent = null;
+		const message = { send: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		await command.onStart({ message, args: ["nope"], config: makeConfig(), registry });
+		const text = String(sent && sent.body != null ? sent.body : sent);
+		assert.ok(/not found/.test(text), "should report the missing command");
+	});
+
 	/* ── uptime ── */
 	await test("uptime: registered and reports the running time", async () => {
 		const command = registry.resolve("uptime");
@@ -932,17 +966,28 @@ async function main() {
 		const previous = global.instabotStartedAt;
 		global.instabotStartedAt = Date.now() - (2 * 86400000 + 3 * 3600000 + 4 * 60000 + 5000);
 		let sent = null;
-		const message = { reply: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
+		const message = { send: form => { sent = form; return Promise.resolve({ messageID: "x" }); } };
 		try {
 			await command.onStart({ message, config: { botName: "InstaBOT" } });
 		}
 		finally {
 			global.instabotStartedAt = previous;
 		}
-		const text = String(sent);
-		assert.ok(/InstaBOT uptime/.test(text), "should name the bot");
+		const text = String(sent && sent.body);
+		assert.ok(/INSTABOT/.test(text), "should name the bot");
 		assert.ok(/2d 3h 4m/.test(text), "should show the elapsed time, got: " + text);
-		assert.ok(/Process uptime:/.test(text), "should include process uptime");
+		assert.ok(/RUNTIME/.test(text), "should show the runtime section");
+		assert.ok(/HOST/.test(text), "should show the host section");
+		assert.ok(/MEMORY/.test(text), "should show the memory section");
+		assert.ok(["love", "angry", "laugh", "cry"].includes(sent.avatarEffect), "should send with a random avatar effect");
+	});
+
+	await test("uptime: uses every avatar effect without repeating in a row", async () => {
+		const command = registry.resolve("uptime");
+		const seen = new Set();
+		const message = { send: form => { seen.add(form.avatarEffect); return Promise.resolve({ messageID: "x" }); } };
+		for (let i = 0; i < 40; i++) await command.onStart({ message, config: { botName: "InstaBOT" } });
+		assert.ok(seen.size >= 2, "random choice should vary across calls, saw: " + [...seen].join(","));
 	});
 
 	await test("uptime: aliases resolve to the command", () => {
