@@ -1070,6 +1070,36 @@ async function main() {
 		}
 	});
 
+	await test("info: sends the text before the profile picture", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(null, { "777": { userID: "777", name: "Jane Doe", vanity: "jane", followerCount: 1, profilePicture: "https://example.com/p.jpg" } });
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "message_reply", threadID: "t", messageID: "m", senderID: "5", body: "-info",
+			messageReply: { messageID: "o", senderID: "777", body: "", attachments: [] }, isGroup: false
+		});
+		const textAt = api.calls.findIndex(c => c.method === "sendMessage" && /Jane Doe/.test(c.form.body));
+		const imgAt = api.calls.findIndex(c => c.method === "sendImage");
+		assert.ok(textAt > -1 && imgAt > -1, "expected both a text and an image");
+		assert.ok(textAt < imgAt, "the text must be sent before the picture");
+	});
+
+	await test("pfp: sends the text before the picture", async () => {
+		const api = fakeApi();
+		api.getUserInfo = (id, cb) => cb(null, { "777": { userID: "777", name: "Jane Doe", vanity: "jane", profilePicture: "https://example.com/p.jpg" } });
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "message_reply", threadID: "t", messageID: "m", senderID: "5", body: "-pfp",
+			messageReply: { messageID: "o", senderID: "777", body: "", attachments: [] }, isGroup: false
+		});
+		const textAt = api.calls.findIndex(c => c.method === "sendMessage" && /Jane Doe/.test(c.form.body));
+		const imgAt = api.calls.findIndex(c => c.method === "sendImage");
+		assert.ok(textAt > -1 && imgAt > -1, "expected both a text and a picture");
+		assert.ok(textAt < imgAt, "the text must be sent before the picture");
+	});
+
 	await test("info: shows a user's details for a replied user", async () => {
 		const api = fakeApi();
 		api.getUserInfo = (id, cb) => cb(null, { "777": { userID: "777", name: "Jane Doe", vanity: "jane", biography: "hi", followerCount: 1234, followingCount: 56, isPrivate: true, profilePicture: "https://example.com/p.jpg" } });
@@ -1333,6 +1363,55 @@ async function main() {
 		const messages = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
 		assert.strictEqual(messages.length, 1, "exactly one leave message must be sent");
 		assert.ok(/botnkx/.test(messages[0]), "the affected member must be named");
+	});
+
+	await test("join: the bot thanks the inviter instead of welcoming itself", async () => {
+		// The bot's own id is "100" in fakeApi. When it is the added member, it
+		// must send the self message, not a member welcome.
+		const api = fakeApi();
+		const db = makeDatabase();
+		const config = makeConfig({
+			prefix: "-",
+			welcome: { enable: true, message: "Welcome %1 to %2!", selfMessage: "Thanks for inviting me to %2 💋. Type {prefix}help to see all available commands.", threadIDs: [] }
+		});
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		await dispatcher.handle({ type: "join", threadID: "t", participantID: "100", userIDs: ["100"], usernames: [] });
+		const messages = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.strictEqual(messages.length, 1, "exactly one message");
+		assert.ok(/Thanks for inviting me/.test(messages[0]), "expected the invite thank-you");
+		assert.ok(/-help/.test(messages[0]), "the prefix must be substituted");
+		assert.ok(!/Welcome @?100/.test(messages[0]), "must not welcome the bot itself");
+	});
+
+	await test("join: the bot recognises itself added by username", async () => {
+		// fakeApi.getUserInfo reports vanity "tester" for any id; the bot's own
+		// profile resolves to that handle, so a username-only add of "tester"
+		// must be treated as the bot being invited.
+		const api = fakeApi();
+		const db = makeDatabase();
+		const config = makeConfig({
+			prefix: "!",
+			welcome: { enable: true, message: "Welcome %1 to %2!", selfMessage: "Thanks for inviting me to %2 💋. Type {prefix}help.", threadIDs: [] }
+		});
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		await dispatcher.handle({ type: "join", threadID: "t", usernames: ["tester"], userIDs: [] });
+		const messages = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.strictEqual(messages.length, 1, "exactly one message");
+		assert.ok(/Thanks for inviting me/.test(messages[0]), "expected the invite thank-you");
+		assert.ok(/!help/.test(messages[0]), "the configured prefix must be used");
+	});
+
+	await test("join: welcomes a member even when the bot is also added", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const config = makeConfig({
+			welcome: { enable: true, message: "Welcome %1 to %2!", selfMessage: "Thanks!", threadIDs: [] }
+		});
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		await dispatcher.handle({ type: "join", threadID: "t", usernames: ["someone"], userIDs: ["100"] });
+		const messages = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.ok(messages.some(m => /Thanks!/.test(m)), "expected the self thank-you");
+		assert.ok(messages.some(m => /someone/.test(m)), "expected the member welcome too");
 	});
 
 	await test("join: disabled welcome sends nothing", async () => {
