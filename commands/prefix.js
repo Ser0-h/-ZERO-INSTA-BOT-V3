@@ -9,7 +9,7 @@ module.exports = {
 		aliases: ["setprefix"],
 		author: "Neoaz 🐊",
 		category: "admin",
-		cooldown: 2,
+		cooldown: 0,
 		role: 2,
 		noPrefix: true,
 		description: { en: "Show or change the command prefix (works without the prefix)" },
