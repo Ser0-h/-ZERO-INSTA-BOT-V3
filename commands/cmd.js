@@ -118,10 +118,18 @@ function loadInto(registry, file, isEvent) {
 function extractCodeFromBody(body, args) {
 	const text = String(body || "");
 	const idx = text.search(/install\b/i);
-	const after = idx >= 0 ? text.slice(idx + "install".length).trim() : args.join(" ");
+	const after = (idx >= 0 ? text.slice(idx + "install".length) : args.join(" ")).trim();
+
+	const tokens = after.split(/\s+/).filter(Boolean);
+	const urlToken = tokens.find(t => /^https?:\/\//i.test(t)) || null;
+	const nameToken = tokens.find(t => /\.js$/i.test(t) && !/^https?:\/\//i.test(t)) || null;
+
+	// A URL anywhere in the arguments means "download and install", no matter
+	// whether the file name comes before or after it. Never fall through to
+	// treating the URL itself as inline code.
+	if (urlToken) return { code: null, url: urlToken, fileName: nameToken };
+
 	const named = after.match(/^(\S+\.js)\s+([\s\S]+)$/);
-	if (named && /^https?:\/\//i.test(named[1]) && /\.js$/i.test(named[2].trim()))
-		return { code: null, url: named[1], fileName: named[2].trim() };
 	if (named && isCodeLike(named[2])) return { code: named[2], fileName: named[1] };
 	if (isCodeLike(after)) return { code: after, fileName: null };
 	if (named) return { code: named[2], fileName: named[1] };
@@ -138,7 +146,7 @@ module.exports = {
 		role: 2,
 		noPrefix: true,
 		description: { en: "Install, uninstall, load, unload or list commands and events" },
-		usage: { en: "{p}cmd <load|loadall|unload|uninstall|reload|remove|list|install> [args]" }
+		usage: { en: "{p}cmd <load|loadall|unload|uninstall|reload|remove|list|install> [args]\n{p}cmd install <url> [name.js]  or  {p}cmd install <name.js> <url>" }
 	},
 
 	onStart: async function ({ message, args, config, registry, event, setReactionHandler }) {
@@ -228,6 +236,8 @@ module.exports = {
 					"⚠️ Nothing to install. Give a URL, reply to a message containing the code, " +
 					"or pass the code directly:\n" +
 					`${config.prefix}cmd install <url>\n` +
+					`${config.prefix}cmd install <url> <name.js>\n` +
+					`${config.prefix}cmd install <name.js> <url>\n` +
 					`${config.prefix}cmd install <name.js> <code>\n` +
 					`${config.prefix}cmd install <code>`
 				);
