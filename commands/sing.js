@@ -85,12 +85,14 @@ async function sendSong(message, track) {
 	if (!track || !track.url)
 		return message.reply("That song is no longer available. Search again.");
 	try {
-		// Instagram's full-song file is an audio-only MP4. Tag the source with an
-		// audio MIME so it is routed to sendAudio, not sendVideo (the extension
-		// alone would misclassify it).
+		// Instagram's full-song file is an audio-only MP4: tag it with an audio
+		// MIME so it routes to sendAudio, not sendVideo. The audio broadcast is
+		// media-only (its caption would arrive AFTER the clip), so `textFirst`
+		// posts the title as its own message first.
 		await message.send({
 			body: `${track.title || "Unknown"} — ${track.artist || "Unknown"}${track.durationMs ? ` (${formatDuration(track.durationMs)})` : ""}`,
-			attachment: { url: track.url, mimetype: track.mimetype || "audio/mp4" }
+			attachment: { url: track.url, mimetype: track.mimetype || "audio/mp4" },
+			textFirst: true
 		});
 	}
 	catch (error) {

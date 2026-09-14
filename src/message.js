@@ -19,7 +19,8 @@ const utils = require("./utils");
  * `form` may be a string, or `{ body, attachment, url, effect, avatarEffect, textFirst }`.
  * Media attachments are routed to sendImage / sendAudio / sendVideo based on
  * their type, and each media source may be a URL, path, Buffer or stream.
- * `textFirst: true` sends `body` as its own message BEFORE the attachment.
+ * When a `body` is present it is always sent BEFORE the attachment; pass
+ * `textFirst: false` to opt out.
  */
 function createMessageContext({ api, event, log }) {
 	const threadID = event.threadID;
@@ -42,11 +43,13 @@ function createMessageContext({ api, event, log }) {
 		const sources = (Array.isArray(form.attachment) ? form.attachment : [form.attachment]).filter(Boolean);
 		if (!sources.length) return sendPlain(form, replyTarget);
 
-		// `textFirst: true` sends the body as a plain message BEFORE the media,
-		// so a caption-heavy result (info/pfp) reads top-to-bottom in the chat
-		// instead of appearing under the image. The media then goes out on its
-		// own, with no trailing caption to repeat.
-		const textFirst = form.textFirst === true && form.body != null && String(form.body) !== "";
+		// Text always precedes attached media: Instagram's media broadcasts
+		// (image/video/audio) are media-only, so a caption sent with them would
+		// arrive AFTER the attachment. When there is a body, post it as its own
+		// message first and send the media bare. Set `textFirst: false` to opt
+		// out (e.g. a caller that wants the caption attempted inline).
+		const hasBody = form.body != null && String(form.body) !== "";
+		const textFirst = hasBody && form.textFirst !== false;
 
 		return new Promise((resolve, reject) => {
 			let index = 0;

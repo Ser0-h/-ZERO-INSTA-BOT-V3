@@ -561,7 +561,8 @@ Thanks for inviting me to Test Group 💋. Type -help to see all available comma
 @alice left Test Group. 👋
 ```
 
-> `info` and `pfp` send their text **before** the picture, so the details read first in the chat.
+> Any message with both text and media sends the **text first**, then the attachment (so titles and
+> details read above the image/audio/video).
 
 ---
 
