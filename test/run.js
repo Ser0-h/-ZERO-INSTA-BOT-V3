@@ -905,6 +905,47 @@ async function main() {
 		server.close();
 	});
 
+	await test("shutdown: never logs the account out (redeploy must not kill the session)", async () => {
+		const { createBot } = require(path.join(root, "src/bot"));
+		const http = require("http");
+		const os = require("os");
+		// A fake server that would receive a `logout` RPC if the bot sent one.
+		let logoutCalls = 0;
+		const server = http.createServer((req, res) => {
+			let body = "";
+			req.on("data", c => { body += c; });
+			req.on("end", () => {
+				if (String(req.url).startsWith("/events")) {
+					res.writeHead(200, { "Content-Type": "text/event-stream" });
+					return;
+				}
+				if (/logout/.test(body)) logoutCalls++;
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ ok: true, result: "BOT123" }));
+			});
+		});
+		await new Promise(r => server.listen(0, "127.0.0.1", r));
+		const port = server.address().port;
+		const config = {
+			botName: "TestBot", prefix: "/", adminBot: [], env: {},
+			server: { url: "http://127.0.0.1:" + port, token: "t", botId: "default", timeout: 2000 },
+			account: {}, database: { dir: path.join(os.tmpdir(), "igbot-test-logout-" + process.pid) },
+			logEvents: { disableAll: true },
+			onlineStatus: { enable: false },
+			welcome: { enable: false }, leave: { enable: false },
+			autoMarkRead: false, autoMarkDelivery: false
+		};
+		const bot = createBot(config);
+		try {
+			await Promise.race([bot.start(), new Promise(r => setTimeout(r, 2500))]);
+			await bot.stop();
+		}
+		finally {
+			server.close();
+		}
+		assert.strictEqual(logoutCalls, 0, "stop() must never send a logout — it invalidates the cookies");
+	});
+
 	await test("loader: loadAll is idempotent (no duplicate commands/events)", () => {
 		const reg = createRegistry();
 		const first = loadAll(reg);

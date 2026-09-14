@@ -325,9 +325,13 @@ function createBot(config) {
 		catch (_) { /* ignore */ }
 		if (state.restartTimer) clearInterval(state.restartTimer);
 		database.flush();
-		if (state.api && typeof state.api.logout === "function") {
-			try { await state.api.logout(); } catch (_) { /* ignore */ }
-		}
+		// Deliberately DO NOT call api.logout() on shutdown.
+		//
+		// In server mode this RPCs Instagram's /accounts/logout/, which invalidates
+		// the sessionid server-side and permanently kills the cookies. A platform
+		// sends SIGTERM on every redeploy, so logging out on exit means every
+		// deploy logs the account out. Dropping the in-memory handle is enough;
+		// the cookie stays valid for the next boot.
 		log.master("BOOT", `${config.botName} stopped`);
 	}
 
