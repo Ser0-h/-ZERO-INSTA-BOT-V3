@@ -20,7 +20,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lazyneoaz/InstaBOT.git"
+    "url": "git+https://github.com/lazyneoaz/Insta-Botgit"
   },
   "keywords": [
     "instagram",
@@ -30,8 +30,8 @@
     "ig-chat-api",
     "chatbot"
   ],
-  "homepage": "https://github.com/lazyneoaz/InstaBOT#readme",
+  "homepage": "https://github.com/lazyneoaz/Insta-Bot#readme",
   "bugs": {
-    "url": "https://github.com/lazyneoaz/InstaBOT/issues"
+    "url": "https://github.com/lazyneoaz/Insta-Bot/issues"
   }
 }
