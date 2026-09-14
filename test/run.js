@@ -63,7 +63,7 @@ function fakeApi(overrides = {}) {
 			calls.push({ method: "sendImage", img, caption, reply, threadID });
 			cb && cb(null, { threadID, messageID: "img" + calls.length });
 		},
-		sendAudio: (a, threadID, cb, reply) => { calls.push({ method: "sendAudio", threadID, reply }); cb && cb(null, { threadID, messageID: "aud" + calls.length }); },
+		sendAudio: (a, threadID, cb, reply) => { calls.push({ method: "sendAudio", src: a, threadID, reply }); cb && cb(null, { threadID, messageID: "aud" + calls.length }); },
 		sendVideo: (v, threadID, cb) => { calls.push({ method: "sendVideo", threadID }); cb && cb(null, {}); },
 		unsendMessage: (id, threadID, cb) => { calls.push({ method: "unsendMessage", id, threadID }); cb && cb(null, {}); },
 		setMessageReaction: (r, id, threadID, cb) => { calls.push({ method: "setMessageReaction", r, id, threadID }); cb && cb(null, {}); },
@@ -520,25 +520,35 @@ async function main() {
 		return api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
 	}
 
-	await test("sing: searches and lists results with numbers", async () => {
+	await test("music: searches and lists results with numbers", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
-		const out = await runCommand("-sing testing song", { api, db, config: makeConfig() });
+		const out = await runCommand("-music testing song", { api, db, config: makeConfig() });
 		assert.ok(/1\./.test(out) && /2\./.test(out), "expected a numbered list");
 		assert.ok(api.calls.some(c => c.method === "musicSearch" && c.query === "testing song"));
 	});
 
-	await test("sing: numeric pick sends the chosen track", async () => {
+	await test("music: aliases stickermusic/sm/m resolve to the sticker command", async () => {
+		for (const alias of ["stickermusic", "sm", "m"]) {
+			const api = fakeApi();
+			const db = makeDatabase();
+			const out = await runCommand(`-${alias} testing song`, { api, db, config: makeConfig() });
+			assert.ok(/1\./.test(out), `alias "${alias}" should run the sticker search`);
+			assert.ok(api.calls.some(c => c.method === "musicSearch"), `alias "${alias}" should search`);
+		}
+	});
+
+	await test("music: numeric pick sends the chosen track as a sticker", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
 		const config = makeConfig();
 		// Seed a cached search result for the sender.
 		db.users.set("999", { userID: "999", banned: { status: false }, settings: {}, data: { lastMusic: { query: "x", tracks: [{ title: "A", artist: "B", audioClusterID: "111" }] } } });
-		await runCommand("-sing 1", { api, db, config });
+		await runCommand("-music 1", { api, db, config });
 		assert.ok(api.calls.some(c => c.method === "sendMusic" && c.track.audioClusterID === "111"));
 	});
 
-	await test("sing: uses a custom music server when configured", async () => {
+	await test("music: uses a custom music server when configured", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
 		const originalFetch = global.fetch;
@@ -549,7 +559,7 @@ async function main() {
 		};
 		try {
 			const config = makeConfig({ music: { enable: true, apiUrl: "https://music.example/search?q={query}", apiToken: "tok" } });
-			await runCommand("-sing server test", { api, db, config });
+			await runCommand("-music server test", { api, db, config });
 		}
 		finally {
 			global.fetch = originalFetch;
@@ -559,20 +569,76 @@ async function main() {
 		assert.ok(api.calls.some(c => c.method === "sendMusic" && c.track.audioClusterID === "999"));
 	});
 
-	await test("sing: falls back to Instagram search when the music server 404s", async () => {
+	await test("music: falls back to Instagram search when the music server 404s", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
 		const originalFetch = global.fetch;
 		global.fetch = async () => ({ ok: false, status: 404 });
 		try {
 			const config = makeConfig({ music: { enable: true, apiUrl: "https://music.example/search", apiToken: "" } });
-			const out = await runCommand("-sing server down", { api, db, config });
+			const out = await runCommand("-music server down", { api, db, config });
 			assert.ok(!/music server responded/.test(out), "a dead music server must not surface an error");
 			assert.ok(api.calls.some(c => c.method === "musicSearch" && c.query === "server down"), "expected the Instagram fallback");
 		}
 		finally {
 			global.fetch = originalFetch;
 		}
+	});
+
+	await test("sing: lists full songs from the music server", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const originalFetch = global.fetch;
+		global.fetch = async () => ({
+			ok: true,
+			json: async () => ({
+				songs: [
+					{ title: "Full A", artist: "Artist A", duration_ms: 200000, downloadUrl: "https://cdn.example/a.m4a" },
+					{ title: "Full B", artist: "Artist B", duration_ms: 210000, url: "https://cdn.example/b.mp3" }
+				]
+			})
+		});
+		let out;
+		try {
+			const config = makeConfig({ music: { enable: true, apiUrl: "https://music.example/search", apiToken: "" } });
+			out = await runCommand("-sing full song", { api, db, config });
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+		assert.ok(/1\./.test(out) && /2\./.test(out), "expected a numbered full-song list");
+		assert.ok(/Full A/.test(out), "expected the server's title");
+	});
+
+	await test("sing: numeric pick streams the full song as audio", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		db.users.set("999", { userID: "999", banned: { status: false }, settings: {}, data: { lastSong: { query: "x", tracks: [{ title: "A", artist: "B", url: "https://cdn.example/a.mp3" }] } } });
+		await runCommand("-sing 1", { api, db, config: makeConfig() });
+		assert.ok(api.calls.some(c => c.method === "sendAudio" && c.src === "https://cdn.example/a.mp3"), "expected the full-song URL to be streamed as audio");
+	});
+
+	await test("sing: single result is sent immediately", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const originalFetch = global.fetch;
+		global.fetch = async () => ({ ok: true, json: async () => ({ results: [{ title: "Only", artist: "One", url: "https://cdn.example/only.m4a" }] }) });
+		try {
+			const config = makeConfig({ music: { enable: true, apiUrl: "https://music.example/search", apiToken: "" } });
+			await runCommand("-sing only one", { api, db, config });
+		}
+		finally {
+			global.fetch = originalFetch;
+		}
+		assert.ok(api.calls.some(c => c.method === "sendAudio" && c.src === "https://cdn.example/only.m4a"));
+	});
+
+	await test("sing: explains itself when no music server is configured", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const out = await runCommand("-sing no server", { api, db, config: makeConfig() });
+		assert.ok(/music api|music\.apiUrl|search failed/i.test(out), "expected a clear configuration hint");
+		assert.strictEqual(api.calls.filter(c => c.method === "sendAudio").length, 0);
 	});
 
 	await test("avatarfx: rejects an unknown effect", async () => {
@@ -809,15 +875,15 @@ async function main() {
 		assert.ok(/instabot_ok/.test(out));
 	});
 
-	await test("sing: replying to the results message sends the picked track", async () => {
+	await test("music: replying to the results message sends the picked track", async () => {
 		// Regression: the reply handler must be armed against the results
-		// message, not the triggering -sing message the user replies to.
+		// message, not the triggering -music message the user replies to.
 		const api = fakeApi();
 		const db = makeDatabase();
 		const config = makeConfig();
 		const dispatcher = createDispatcher({ api, config, registry, database: db });
 
-		await dispatcher.handle({ type: "message", threadID: "t", messageID: "USER_1", senderID: "999", body: "-sing testing song", isGroup: false });
+		await dispatcher.handle({ type: "message", threadID: "t", messageID: "USER_1", senderID: "999", body: "-music testing song", isGroup: false });
 		const resultIndex = api.calls.findIndex(c => c.method === "sendMessage" && /Results for/.test(c.form.body));
 		assert.ok(resultIndex !== -1, "expected a results message");
 		// fakeApi returns "m" + (number of calls so far) as the messageID.
