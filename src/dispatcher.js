@@ -16,9 +16,24 @@ const ROLE_ADMIN_BOT = 2;
 
 function createDispatcher({ api, config, registry, database }) {
 	const cooldowns = new Map();
-	const onReply = new Map(); // messageID -> { commandName, handler }
-	const onReaction = new Map(); // messageID -> { commandName, handler }
+	const onReply = new Map(); // messageID -> { commandName, handler, at }
+	const onReaction = new Map(); // messageID -> { commandName, handler, at }
 	const refreshedUsers = new Set();
+
+	// Reply/reaction handlers are keyed by message id and were never removed, so
+	// a long-running bot leaked one closure per command that arms a handler (AI,
+	// roll, sing, cmd…). Reply handlers are also consumed one-shot in
+	// runReplyHandlers; this sweep bounds the rest (e.g. reaction handlers that
+	// are never triggered) by age.
+	const HANDLER_TTL_MS = 30 * 60 * 1000;
+	function pruneHandlers(now) {
+		for (const map of [onReply, onReaction]) {
+			if (map.size < 256) continue;
+			for (const [key, value] of map) {
+				if (now - (value.at || 0) > HANDLER_TTL_MS) map.delete(key);
+			}
+		}
+	}
 
 	function senderIDOf(event) {
 		return String(event.senderID || event.userID || "");
@@ -65,12 +80,12 @@ function createDispatcher({ api, config, registry, database }) {
 	}
 
 	function registerOnReply(messageID, commandName, handler) {
-		onReply.set(String(messageID), { commandName, handler });
+		onReply.set(String(messageID), { commandName, handler, at: Date.now() });
 		return handler;
 	}
 
 	function registerOnReaction(messageID, commandName, handler) {
-		onReaction.set(String(messageID), { commandName, handler });
+		onReaction.set(String(messageID), { commandName, handler, at: Date.now() });
 		return handler;
 	}
 
@@ -191,13 +206,13 @@ function createDispatcher({ api, config, registry, database }) {
 			setReplyHandler(handler, messageID) {
 				const key = messageID != null ? messageID : event.messageID;
 				if (key == null) return handler;
-				onReply.set(String(key), { commandName, handler });
+				onReply.set(String(key), { commandName, handler, at: Date.now() });
 				return handler;
 			},
 			setReactionHandler(handler, messageID) {
 				const key = messageID != null ? messageID : event.messageID;
 				if (key == null) return handler;
-				onReaction.set(String(key), { commandName, handler });
+				onReaction.set(String(key), { commandName, handler, at: Date.now() });
 				return handler;
 			}
 		};
@@ -217,6 +232,10 @@ function createDispatcher({ api, config, registry, database }) {
 		if (!repliedID) return false;
 		const entry = onReply.get(String(repliedID));
 		if (!entry) return false;
+		// One-shot: consume the handler so the map cannot grow without bound.
+		// A handler that wants to keep a conversation going re-arms a new handler
+		// via setReplyHandler (the AI command does this), so nothing is lost.
+		onReply.delete(String(repliedID));
 		try {
 			await entry.handler({
 				api,
@@ -234,13 +253,13 @@ function createDispatcher({ api, config, registry, database }) {
 				setReplyHandler(handler, messageID) {
 					const key = messageID != null ? messageID : event.messageID;
 					if (key == null) return handler;
-					onReply.set(String(key), { commandName: entry.commandName, handler });
+					onReply.set(String(key), { commandName: entry.commandName, handler, at: Date.now() });
 					return handler;
 				},
 				setReactionHandler(handler, messageID) {
 					const key = messageID != null ? messageID : event.messageID;
 					if (key == null) return handler;
-					onReaction.set(String(key), { commandName: entry.commandName, handler });
+					onReaction.set(String(key), { commandName: entry.commandName, handler, at: Date.now() });
 					return handler;
 				}
 			});
@@ -268,13 +287,13 @@ function createDispatcher({ api, config, registry, database }) {
 				setReplyHandler(handler, messageID) {
 					const key = messageID != null ? messageID : event.messageID;
 					if (key == null) return handler;
-					onReply.set(String(key), { commandName: entry.commandName, handler });
+					onReply.set(String(key), { commandName: entry.commandName, handler, at: Date.now() });
 					return handler;
 				},
 				setReactionHandler(handler, messageID) {
 					const key = messageID != null ? messageID : event.messageID;
 					if (key == null) return handler;
-					onReaction.set(String(key), { commandName: entry.commandName, handler });
+					onReaction.set(String(key), { commandName: entry.commandName, handler, at: Date.now() });
 					return handler;
 				}
 			});
@@ -340,6 +359,7 @@ function createDispatcher({ api, config, registry, database }) {
 
 	async function handle(event) {
 		if (!event || !event.threadID) return;
+		pruneHandlers(Date.now());
 		const senderID = senderIDOf(event);
 		if (!senderID && (event.type === "message" || event.type === "message_reply")) return;
 

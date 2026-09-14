@@ -61,10 +61,11 @@ function createMessageContext({ api, event, log }) {
 					// are silently dropped. Send the clip, then the caption as its
 					// own plain message (the documented way to caption a video).
 					if (kind === "video") {
+						const videoReply = current === 0 ? replyTarget : undefined;
 						return api.sendVideo(source, threadID, (error, result) => {
 							if (error || !caption) return done(error, result);
-							api.sendMessage({ body: caption }, threadID, () => done(null, result), replyTarget);
-						});
+							api.sendMessage({ body: caption }, threadID, () => done(null, result), videoReply);
+						}, videoReply);
 					}
 					if (kind === "audio") {
 						// The voice_attachment broadcast is also media-only: send the
