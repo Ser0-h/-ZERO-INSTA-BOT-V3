@@ -619,6 +619,32 @@ async function main() {
 		}
 	});
 
+	await test("cmd: URL install works with the name before the URL too", async () => {
+		// Regression: `-cmd install ai.js <url>` treated the URL itself as
+		// inline code and wrote the URL text as the file, so the bot failed
+		// (or silently kept the old file). The name may come before or after
+		// the URL.
+		const api = fakeApi();
+		const db = makeDatabase();
+		const fileName = "testurlorder_" + Date.now().toString(36) + ".js";
+		const originalFetch = global.fetch;
+		const code = 'module.exports = { config: { name: "zzzurlordercmd", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("ok") };';
+		let fetched = null;
+		global.fetch = async (url) => { fetched = String(url); return { ok: true, text: async () => code }; };
+		try {
+			const out = await runCommand(`-cmd install ${fileName} https://example.com/thing.js`, { api, db, config: makeConfig() });
+			assert.ok(/Installed "zzzurlordercmd"/.test(out), "should install with name-first order, got: " + out);
+			assert.strictEqual(fetched, "https://example.com/thing.js", "the URL must be fetched, not treated as code");
+			const written = require("fs").readFileSync(require("path").join(__dirname, "..", "commands", fileName), "utf8");
+			assert.match(written, /module\.exports/, "the file must contain the downloaded code");
+		}
+		finally {
+			global.fetch = originalFetch;
+			registry.unregisterCommand("zzzurlordercmd");
+			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "commands", fileName)); } catch (_) { }
+		}
+	});
+
 	await test("cmd: uninstall removes the file and unloads it live", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
