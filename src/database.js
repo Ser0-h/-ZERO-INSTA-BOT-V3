@@ -100,6 +100,9 @@ function createDatabase(config) {
 		threadID: null,
 		name: null,
 		isGroup: false,
+		// True once the thread's type has been confirmed against the API, so we
+		// do not re-fetch getThreadInfo on every message.
+		groupKnown: false,
 		members: [],
 		adminIDs: [],
 		settings: {},

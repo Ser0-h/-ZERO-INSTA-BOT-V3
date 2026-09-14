@@ -38,8 +38,12 @@ module.exports = {
 		if (Array.isArray(settings.threadIDs) && settings.threadIDs.length &&
 			!settings.threadIDs.map(String).includes(String(threadID))) return;
 
-		const userIDs = (event.userIDs && event.userIDs.length ? event.userIDs : [event.participantID || event.senderID || event.userID])
+		// Prefer explicit ids; fall back to the usernames an action_log event
+		// carries (Instagram exposes the affected member as @handles there).
+		const usernames = Array.isArray(event.usernames) ? event.usernames.map(String).filter(Boolean) : [];
+		let userIDs = (event.userIDs && event.userIDs.length ? event.userIDs : [event.participantID || event.senderID || event.userID])
 			.filter(Boolean).map(String);
+		if (!userIDs.length && usernames.length) userIDs = usernames.slice();
 		if (!userIDs.length) return;
 
 		const thread = threadsData.get(threadID) || {};
@@ -60,6 +64,7 @@ module.exports = {
 			// Prefer a stored name so we can still name someone who just left.
 			const stored = usersData.get(userID) || {};
 			let name = stored.name || stored.username || null;
+			if (!name && usernames.includes(userID)) name = userID;
 			if (!name) {
 				try {
 					const info = await new Promise((resolve, reject) =>
