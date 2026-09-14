@@ -4,20 +4,35 @@
 
 # InstaBOT
 
-**A modular Instagram Direct chat bot powered by [`ig-chat-api`](https://github.com/lazyneoaz).**
+**A modular Instagram Direct chat bot powered by [`ig-chat-api`](https://github.com/lazyneoaz/ig-chat-api).**
 
 Send text, music stickers, animated text effects, photos, audio and video — with prefix commands,
 events, roles, cooldowns and pluggable custom commands.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-3ddc84)
-![Tests](https://img.shields.io/badge/tests-53%20passing-3ddc84)
+![Tests](https://img.shields.io/badge/tests-79%20passing-3ddc84)
 
-[![View](https://img.shields.io/badge/View-InstaBot--V1-2ea44f?logo=github)](https://github.com/lazyneoaz/InstaBot-V1)
-[![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github)](https://github.com/lazyneoaz/InstaBot-V1/fork)
-[![Star](https://img.shields.io/github/stars/lazyneoaz/InstaBot-V1?label=Star&logo=github&color=ffd33d)](https://github.com/lazyneoaz/InstaBot-V1/stargazers)
+[![View](https://img.shields.io/badge/View-Insta--Bot-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot)
+[![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github)](https://github.com/lazyneoaz/Insta-Bot/fork)
+[![Star](https://img.shields.io/github/stars/lazyneoaz/Insta-Bot?label=Star&logo=github&color=ffd33d)](https://github.com/lazyneoaz/Insta-Bot/stargazers)
+
+### ⭐ If this project helps you, please [fork it](https://github.com/lazyneoaz/Insta-Bot/fork) and give it a [star](https://github.com/lazyneoaz/Insta-Bot/stargazers) — it means a lot!
 
 </div>
+
+---
+
+## ⭐ Support the work
+
+InstaBOT is built and maintained by **Saifullah Al Neoaz** and shared for free.
+If you find it useful, the best ways to say thanks:
+
+- ⭐ **[Star the repo](https://github.com/lazyneoaz/Insta-Bot/stargazers)** — it takes a second and really helps.
+- 🍴 **[Fork it](https://github.com/lazyneoaz/Insta-Bot/fork)** — build your own version and keep the credits intact.
+- 🐛 **[Open an issue](https://github.com/lazyneoaz/Insta-Bot/issues)** with bugs or ideas.
+
+Your star is not required to use it — but it is the fuel that keeps it maintained. Thank you! 🙏
 
 ---
 
@@ -510,7 +525,7 @@ InstaBOT/
 ## Testing
 
 ```bash
-npm test                      # 45 unit tests, no credentials needed
+npm test                      # 79 unit tests, no credentials needed
 node test/live-send.js <tid>  # sends real DMs through the configured server
 ```
 
@@ -530,17 +545,31 @@ result. It uses `config.server.url` + `config.server.token` when set, otherwise 
 
 ---
 
+## Credits
+
+**Author:** Saifullah Al Neoaz — [@lazyneoaz](https://github.com/lazyneoaz)
+
+- GitHub: [https://github.com/lazyneoaz](https://github.com/lazyneoaz)
+- Project: [InstaBOT](https://github.com/lazyneoaz/Insta-Bot)
+- Powered by: [`ig-chat-api`](https://github.com/lazyneoaz/ig-chat-api) and [`ig-chat-api-server`](https://github.com/lazyneoaz/ig-chat-api-server)
+
+If you fork or reuse this project, please keep this credit and the MIT license intact.
+
+---
+
 ## License
 
-MIT © [Saifullah Al Neoaz](https://github.com/lazyneoaz)
+MIT © [Saifullah Al Neoaz](https://github.com/lazyneoaz) — see [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 
-[![View](https://img.shields.io/badge/View-InstaBot--V1-2ea44f?logo=github&style=for-the-badge)](https://github.com/lazyneoaz/InstaBot-V1)
-[![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github&style=for-the-badge)](https://github.com/lazyneoaz/InstaBot-V1/fork)
-[![Star](https://img.shields.io/github/stars/lazyneoaz/InstaBot-V1?label=Star&logo=github&color=ffd33d&style=for-the-badge)](https://github.com/lazyneoaz/InstaBot-V1/stargazers)
+### ⭐ Enjoying InstaBOT? [Fork](https://github.com/lazyneoaz/Insta-Bot/fork) it and [leave a star](https://github.com/lazyneoaz/Insta-Bot/stargazers)!
+
+[![View](https://img.shields.io/badge/View-Insta--Bot-2ea44f?logo=github&style=for-the-badge)](https://github.com/lazyneoaz/Insta-Bot)
+[![Fork](https://img.shields.io/badge/Fork-repo-2ea44f?logo=github&style=for-the-badge)](https://github.com/lazyneoaz/Insta-Bot/fork)
+[![Star](https://img.shields.io/github/stars/lazyneoaz/Insta-Bot?label=Star&logo=github&color=ffd33d&style=for-the-badge)](https://github.com/lazyneoaz/Insta-Bot/stargazers)
 
 [![MIT License](https://img.shields.io/badge/license-MIT-c13584?style=for-the-badge)](LICENSE)
 
