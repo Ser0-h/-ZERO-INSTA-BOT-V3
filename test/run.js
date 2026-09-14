@@ -958,6 +958,30 @@ async function main() {
 		assert.ok(/left/.test(reply), "expected a leave message");
 	});
 
+	await test("join: welcomes the affected member from a username-only action_log", async () => {
+		// After the server parser drops the actor, a realtime join carries only
+		// the added member's username (no numeric id). Exactly one welcome.
+		const api = fakeApi();
+		const db = makeDatabase();
+		const config = makeConfig({ welcome: { enable: true, message: "Welcome %1 to %2!", threadIDs: [] } });
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		await dispatcher.handle({ type: "join", threadID: "t", usernames: ["botnkx"], userIDs: [] });
+		const messages = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.strictEqual(messages.length, 1, "exactly one welcome must be sent");
+		assert.ok(/botnkx/.test(messages[0]), "the affected member must be named");
+	});
+
+	await test("leave: announces the affected member from a username-only action_log", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const config = makeConfig({ leave: { enable: true, message: "%1 left %2.", threadIDs: [] } });
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		await dispatcher.handle({ type: "leave", threadID: "t", usernames: ["botnkx"], userIDs: [] });
+		const messages = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.strictEqual(messages.length, 1, "exactly one leave message must be sent");
+		assert.ok(/botnkx/.test(messages[0]), "the affected member must be named");
+	});
+
 	await test("join: disabled welcome sends nothing", async () => {
 		const api = fakeApi();
 		const db = makeDatabase();
