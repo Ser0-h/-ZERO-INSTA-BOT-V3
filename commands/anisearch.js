@@ -175,7 +175,12 @@ module.exports = {
 			);
 		}
 		if (lastUrl) {
-			return message.reply(`Found a video but could not send it: ${detail}\n${lastUrl}`);
+			// The video was found and downloaded; only the upload failed. Send the
+			// link so the result is still useful, and say why the file did not go.
+			return message.reply(
+				`Found a video but Instagram refused the upload: ${detail}\n${lastUrl}\n` +
+				"(If this keeps happening, the account is likely challenged — open Instagram and clear any prompt.)"
+			);
 		}
 		return message.reply(`Could not find a video: ${detail}`);
 	}
