@@ -1702,6 +1702,105 @@ async function main() {
 		finally { await live.stop(); }
 	});
 
+	/* ── group detection, join/leave, avatar fallback ── */
+
+	await test("normalizeEvent: infers a group from participantIDs", async () => {
+		const event = normalizeEvent({ type: "message", threadID: "g", senderID: "5", body: "hi", participantIDs: ["1", "2", "5"] });
+		assert.strictEqual(event.isGroup, true);
+	});
+
+	await test("normalizeEvent: keeps a DM a DM", async () => {
+		const event = normalizeEvent({ type: "message", threadID: "d", senderID: "5", body: "hi" });
+		assert.notStrictEqual(event.isGroup, true);
+	});
+
+	await test("normalizeEvent: maps action_log added_participants onto userIDs", async () => {
+		const event = normalizeEvent({ type: "join", threadID: "g", isGroup: true, added_participants: ["77", "88"] });
+		assert.deepStrictEqual(event.userIDs, ["77", "88"]);
+	});
+
+	await test("dispatcher: resolves a group thread when isGroup is missing", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		await runCommand("-adduser 555", { api, db, config: makeConfig(), extraEvent: { isGroup: undefined } });
+		assert.ok(api.calls.some(c => c.method === "addUserToThread" && c.uid === "555"), "should treat the resolved group correctly");
+	});
+
+	await test("welcome event: greets a member added via action_log usernames", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "join", threadID: "g", isGroup: true,
+			usernames: ["arobrifat"], userIDs: []
+		});
+		const bodies = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.ok(bodies.some(b => /Welcome arobrifat/.test(b)), JSON.stringify(bodies));
+	});
+
+	await test("leave event: announces a member removed via action_log usernames", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config: makeConfig(), registry, database: db });
+		await dispatcher.handle({
+			type: "leave", threadID: "g", isGroup: true,
+			usernames: ["arobrifat"], userIDs: []
+		});
+		const bodies = api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body);
+		assert.ok(bodies.some(b => /arobrifat left/.test(b)), JSON.stringify(bodies));
+	});
+
+	await test("avatarEffect: sends the avatar power-up as-is when Instagram accepts it", async () => {
+		const calls = [];
+		const api = fakeApi({
+			sendAvatarTextEffect: (text, threadID, effect, cb) => { calls.push("avatar:" + effect); cb(null, { ok: true }); },
+			sendTextEffect: () => { calls.push("text"); }
+		});
+		const message = createMessageContext({ api, event: { threadID: "d", messageID: "m", isGroup: false }, log });
+		const result = await message.avatarEffect("hello", "laugh");
+		assert.deepStrictEqual(result, { ok: true });
+		assert.deepStrictEqual(calls, ["avatar:laugh"]);
+	});
+
+	await test("avatarEffect: surfaces the Instagram refusal instead of downgrading", async () => {
+		const calls = [];
+		const api = fakeApi({
+			sendAvatarTextEffect: (text, threadID, effect, cb) => { calls.push("avatar"); cb(new Error("Instagram refused the avatar effect for this thread (error_code 1545003).")); },
+			sendTextEffect: () => { calls.push("text"); }
+		});
+		const message = createMessageContext({ api, event: { threadID: "g", messageID: "m", isGroup: true }, log });
+		await assert.rejects(message.avatarEffect("hello", "laugh"), /1545003/);
+		assert.deepStrictEqual(calls, ["avatar"]);
+	});
+
+	await test("resolveAvatarSticker: one sticker id per thread, effect-independent", async () => {
+		const config = {
+			avatarEffects: {
+				stickers: {
+					"999": "1994444894604654",
+					"*": "2601937316988106"
+				}
+			}
+		};
+		// Same id for every effect in a mapped thread.
+		assert.strictEqual(utils.resolveAvatarSticker(config, "999", "angry"), "1994444894604654");
+		assert.strictEqual(utils.resolveAvatarSticker(config, "999", "love"), "1994444894604654");
+		// Fallback used for an unmapped thread.
+		assert.strictEqual(utils.resolveAvatarSticker(config, "123", "cry"), "2601937316988106");
+		// No mapping at all -> null so the server default is used.
+		assert.strictEqual(utils.resolveAvatarSticker({}, "123", "love"), null);
+	});
+
+	await test("avatarfx: reports the per-chat refusal in plain language", async () => {		const avatarfx = require(path.join(root, "commands/avatarfx"));
+		const replies = [];
+		const message = {
+			reply: (text) => { replies.push(text); },
+			avatarEffect: () => Promise.reject(new Error("Instagram refused the avatar effect for this thread (error_code 1545003)."))
+		};
+		await avatarfx.onStart({ message, args: ["laugh", "nice"] });
+		assert.ok(replies.some(r => /avatar effect/i.test(r) && /try again later/i.test(r)), JSON.stringify(replies));
+	});
+
 	/* ── summary ── */
 	const failed = results.filter(r => !r.ok);
 	for (const r of results)
