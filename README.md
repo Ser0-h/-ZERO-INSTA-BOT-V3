@@ -387,6 +387,7 @@ Both song commands read the same `music.apiUrl`:
 A few commands work **without** the prefix so you can never lock yourself out:
 
 - `prefix` — anyone can run it to see the current prefix; a bot admin can run `prefix !` to change it.
+- `bby` (and its aliases) — chat with bby without typing the prefix.
 - The bot-admin commands (`admin`, `ban`, `adduser`, `removeuser`, `prefix`, `whitelist`, `cmd`,
   `avatar`, `bio`, `eval`, `shell`) also run without the prefix for **bot admins only**. Normal users
   still need the prefix.

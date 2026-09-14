@@ -1,4 +1,16 @@
 "use strict";
+
+/**
+ * bby — a native InstaBOT port of Goatbot-V2's bby command.
+ *
+ * Source requested by the project owner:
+ * https://raw.githubusercontent.com/lazyneoaz/Goatbot-V2/refs/heads/main/scripts/cmds/bby.js
+ *
+ * The original script depends on axios and GoatBot globals. This port uses
+ * Node's built-in fetch and InstaBOT reply handlers, so it works without npm
+ * dependencies or the GoatBot runtime.
+ */
+
 const API_BASE = "https://baby-apisx.vercel.app";
 const ALIASES = ["baby", "jan", "suna"];
 const RANDOM_REPLIES = [
@@ -166,9 +178,11 @@ module.exports = {
 	config: {
 		name: "bby",
 		aliases: ALIASES,
-		author: "ArYAN",
+		author: "ArYAN / Neoaz port",
 		cooldown: 0,
 		role: 0,
+		noPrefix: true,
+		noPrefixRole: 0,
 		category: "chat",
 		description: { en: "Chat with bby and teach custom replies" },
 		usage: { en: "{p}bby <message> | {p}bby teach <message> - <reply> | {p}bby list" }
