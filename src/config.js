@@ -59,8 +59,8 @@ function loadConfig() {
 	// as an API endpoint silently broke commands (e.g. `sing` hitting the bot's
 	// own host and getting a 404).
 	config.env = config.env || {};
-	config.env.token = config.env.token || process.env.INSTABOT_TOKEN || "";
-	config.env.url = config.env.url || process.env.INSTABOT_URL || "";
+	config.env.token = process.env.INSTABOT_TOKEN || config.env.token || "";
+	config.env.url = process.env.INSTABOT_URL || config.env.url || "";
 
 	// Music: blank apiUrl means "use Instagram's own catalogue". NEVER fall back
 	// to env.url — that is not a music server, and a host like Render/Railway
@@ -71,10 +71,17 @@ function loadConfig() {
 	config.music.apiUrl = config.music.apiUrl || "";
 	config.music.apiToken = config.music.apiToken || "";
 
-	// Private ig-chat-api server: config.json wins, then environment variables.
+	// Private ig-chat-api server.
+	//
+	// The environment WINS over config.json. This is deliberate: a forked repo
+	// can carry a committed `server.url` from whoever published it, and a
+	// deployment must always be able to point at its own server. Before, the
+	// file value took priority, so everyone who forked and set IG_API_SERVER in
+	// their host dashboard still connected to the original author's server (and
+	// therefore to that author's Instagram account).
 	config.server = config.server || {};
-	config.server.url = config.server.url || process.env.IG_API_SERVER || "";
-	config.server.token = config.server.token || process.env.IG_API_TOKEN || "";
+	config.server.url = process.env.IG_API_SERVER || config.server.url || "";
+	config.server.token = process.env.IG_API_TOKEN || config.server.token || "";
 	// There is deliberately no bot id to configure. The server identifies each
 	// session by the account's own Instagram id, and the bot learns its id from
 	// the server's /cookies reply (see auth.js). Any legacy botId in config.json
@@ -158,7 +165,10 @@ function normalizeCookies(list) {
  */
 function loadAccount() {
 	if (!fs.existsSync(accountPath))
-		throw new Error("account.txt not found. Add your Instagram cookies to it.");
+		throw new Error(
+			"account.txt not found. Copy account.example.txt to account.txt and paste your Instagram cookies. " +
+			"It is git-ignored, so your cookies are never committed."
+		);
 	const text = fs.readFileSync(accountPath, "utf8").trim();
 	if (!text) throw new Error("account.txt is empty");
 

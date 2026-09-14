@@ -6,6 +6,10 @@ npm-debug.log
 .env.*
 *.log
 instabot-live-send.json
+data
 Dockerfile
 .dockerignore
 README.md
+
+# Never bake cookies into an image.
+account.txt

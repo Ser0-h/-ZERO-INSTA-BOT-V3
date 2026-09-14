@@ -7,3 +7,8 @@ data/*.jsonl
 *.log
 .DS_Store
 instabot-live-send.json
+
+# Instagram cookies are a password. Never commit them.
+account.txt
+.env
+.env.*
