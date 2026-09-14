@@ -52,11 +52,18 @@ function loadConfig() {
 	config.antiInbox = config.antiInbox === true;
 	config.noPrefix = config.noPrefix === true;
 
-	// Optional secrets/endpoints: config.json wins, then environment variables.
+	// Optional secrets/endpoints for custom commands.
+	//
+	// Only the namespaced INSTABOT_* variables are read: hosts like Render set a
+	// bare `URL` (the service's own public URL) and `PORT`, and picking those up
+	// as an API endpoint silently broke commands (e.g. `sing` hitting the bot's
+	// own host and getting a 404).
 	config.env = config.env || {};
-	config.env.token = config.env.token || process.env.INSTABOT_TOKEN || process.env.TOKEN || "";
-	config.env.url = config.env.url || process.env.INSTABOT_URL || process.env.URL || "";
+	config.env.token = config.env.token || process.env.INSTABOT_TOKEN || "";
+	config.env.url = config.env.url || process.env.INSTABOT_URL || "";
 
+	// Music: blank apiUrl means "use Instagram's own catalogue". Never fall back
+	// to env.url — that is not a music server.
 	config.music = config.music || {};
 	config.music.enable = config.music.enable !== false;
 	config.music.apiUrl = config.music.apiUrl || config.env.url || "";

@@ -215,11 +215,13 @@ locally and streamed to the server as bytes.
 Anything left blank in `config.json` can be supplied by the environment — handy for containers:
 
 ```
-INSTABOT_TOKEN=…   # or TOKEN
-INSTABOT_URL=…     # or URL
+INSTABOT_TOKEN=…
+INSTABOT_URL=…
 ```
 
-Values in `config.json` take precedence.
+Values in `config.json` take precedence. Only the `INSTABOT_*` names are read: hosts such as
+Render set a bare `URL` (the service's own public URL), and reading that as an API endpoint
+silently broke commands like `sing`, which then called the bot's own host and got a 404.
 
 Other environment variables:
 
