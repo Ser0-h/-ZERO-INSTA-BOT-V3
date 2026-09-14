@@ -2420,6 +2420,66 @@ async function main() {
 		finally { utils.download = download; }
 	});
 
+	await test("resolveProfile: an incomplete authenticated profile is filled from the public one", async () => {
+		// getUserInfo can return a 200 without the social counts. The public
+		// profile must fill them in for the same user.
+		const download = utils.download;
+		utils._resetUsernameCache();
+		utils.download = () => Promise.resolve(Buffer.from(JSON.stringify({ data: { user: {
+			id: "777", username: "jane", full_name: "Jane Doe", biography: "hello",
+			edge_followed_by: { count: 42 }, edge_follow: { count: 7 },
+			profile_pic_url_hd: "https://example.com/p.jpg"
+		} } })));
+		try {
+			const api = fakeApi({
+				getUserInfo: (id, cb) => cb(null, { "777": { userID: "777", name: "Jane Doe", vanity: "jane", profilePicture: "https://example.com/p.jpg" } })
+			});
+			const p = await utils.resolveProfile(["777"], {}, api);
+			assert.strictEqual(String(p.userID), "777");
+			assert.strictEqual(p.followers, 42, "followers must be filled in");
+			assert.strictEqual(p.following, 7, "following must be filled in");
+			assert.strictEqual(p.biography, "hello");
+		}
+		finally { utils.download = download; utils._resetUsernameCache(); }
+	});
+
+	await test("resolveProfile: a mismatched public profile never overwrites the right id", async () => {
+		// A handle can collide with an unrelated account; the public result must
+		// be ignored when its id differs from the authenticated one.
+		const download = utils.download;
+		utils._resetUsernameCache();
+		utils.download = () => Promise.resolve(Buffer.from(JSON.stringify({ data: { user: {
+			id: "999999", username: "jane", full_name: "Jane Williamson", biography: "wrong person",
+			edge_followed_by: { count: 1975133 }, edge_follow: { count: 979 }
+		} } })));
+		try {
+			const api = fakeApi({
+				getUserInfo: (id, cb) => cb(null, { "777": { userID: "777", name: "Jane Doe", vanity: "jane", profilePicture: "https://example.com/p.jpg" } })
+			});
+			const p = await utils.resolveProfile(["777"], {}, api);
+			assert.strictEqual(String(p.userID), "777", "the id must stay the requested user's");
+			assert.notStrictEqual(p.followers, 1975133, "must not take the wrong account's followers");
+		}
+		finally { utils.download = download; utils._resetUsernameCache(); }
+	});
+
+	await test("resolveProfile: a throttled numeric id recovers the handle from the cache", async () => {
+		const download = utils.download;
+		utils._resetUsernameCache();
+		// Prime the cache via a handle lookup, then throttle the id lookup.
+		utils.download = () => Promise.resolve(Buffer.from(JSON.stringify({ data: { user: {
+			id: "777", username: "jane", full_name: "Jane Doe", biography: "hi",
+			edge_followed_by: { count: 42 }, edge_follow: { count: 7 }
+		} } })));
+		try {
+			await utils.resolveProfile(["jane"], {}, null); // writes the cache
+			const api = fakeApi({ getUserInfo: (id, cb) => cb(new Error("parseAndCheckLogin got status code: 429")) });
+			const p = await utils.resolveProfile(["777"], {}, api);
+			assert.strictEqual(p.followers, 42, "the cached handle must let the public endpoint fill the profile");
+		}
+		finally { utils.download = download; utils._resetUsernameCache(); }
+	});
+
 	await test("uid: reports throttling instead of 'Could not find'", async () => {
 		const command = registry.resolve("uid");
 		const api = fakeApi({
