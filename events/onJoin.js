@@ -7,8 +7,13 @@
  *   "welcome": {
  *     "enable": true,
  *     "message": "Welcome %1 to %2! 👋",   // %1 = user, %2 = thread name
+ *     "selfMessage": "Thanks for inviting me to %2 💋. Type {prefix}help to see all available commands.",
  *     "threadIDs": []                        // empty = every thread
  *   }
+ *
+ * When the BOT ITSELF is the one added, it does not welcome itself: it thanks
+ * the inviter with `selfMessage` ({prefix} is the live command prefix, %2 the
+ * group name).
  *
  * Author: Saifullah Al Neoaz (https://github.com/lazyneoaz)
  */
@@ -54,6 +59,38 @@ module.exports = {
 
 		if (!usernames.length && !ids.length) return;
 
+		const thread = threadsData.get(threadID) || {};
+		let threadName = thread.name;
+		if (!threadName) {
+			try {
+				const info = await new Promise((resolve, reject) =>
+					api.getThreadInfo(threadID, (error, result) => error ? reject(error) : resolve(result)));
+				threadName = info && (info.name || (info.threadName));
+				if (threadName) threadsData.update(threadID, { name: threadName });
+			}
+			catch (_) { /* name is optional */ }
+		}
+
+		// The bot's own id, so an invite of the bot is not treated as a member to
+		// welcome. The action_log often lists the bot here when IT was added.
+		let selfID = null;
+		try {
+			selfID = String(api.getCurrentUserID() || api._userID || "") || null;
+		}
+		catch (_) { selfID = null; }
+		const selfHandles = new Set();
+		try {
+			const info = selfID ? await new Promise((resolve) =>
+				api.getUserInfo(selfID, (error, result) => resolve(error ? null : result))) : null;
+			const self = info && info[selfID];
+			if (self && (self.vanity || self.username)) selfHandles.add(String(self.vanity || self.username).toLowerCase());
+		}
+		catch (_) { /* best effort */ }
+
+		const isSelf = (target) =>
+			(selfID && target.userID && String(target.userID) === selfID) ||
+			(target.username && selfHandles.has(String(target.username).replace(/^@/, "").toLowerCase()));
+
 		// One entry per affected member: a known handle when we have one, else
 		// the numeric id to be resolved to a username below.
 		const targets = [];
@@ -67,22 +104,27 @@ module.exports = {
 		}
 		if (!targets.length) return;
 
-		const thread = threadsData.get(threadID) || {};
-		let threadName = thread.name;
-		if (!threadName) {
+		// If the bot itself was added, thank the inviter; do not welcome the bot.
+		const selfTargets = targets.filter(isSelf);
+		const memberTargets = targets.filter(t => !isSelf(t));
+		if (selfTargets.length) {
+			const selfTemplate = settings.selfMessage ||
+				"Thanks for inviting me to %2 💋. Type {prefix}help to see all available commands.";
+			const text = fill(selfTemplate, [null, threadName || threadID])
+				.replace(/\{prefix\}/g, String(config.prefix == null ? "-" : config.prefix));
 			try {
-				const info = await new Promise((resolve, reject) =>
-					api.getThreadInfo(threadID, (error, result) => error ? reject(error) : resolve(result)));
-				threadName = info && (info.name || (info.threadName));
-				if (threadName) threadsData.update(threadID, { name: threadName });
+				await message.send(text);
 			}
-			catch (_) { /* name is optional */ }
+			catch (error) {
+				log.warn("JOIN", `Could not thank the inviter: ${error.message}`);
+			}
 		}
+		if (!memberTargets.length) return;
 
 		const template = settings.message || "Welcome %1 to %2! 👋";
 		const seen = new Set();
 
-		for (const target of targets) {
+		for (const target of memberTargets) {
 			let username = target.username;
 			let display = null;
 

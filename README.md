@@ -539,6 +539,7 @@ added to a group and say goodbye when someone leaves. Configure them in `config.
 "welcome": {
   "enable": true,
   "message": "Welcome %1 to %2! 👋",
+  "selfMessage": "Thanks for inviting me to %2 💋. Type {prefix}help to see all available commands.",
   "threadIDs": []
 },
 "leave": {
@@ -549,13 +550,18 @@ added to a group and say goodbye when someone leaves. Configure them in `config.
 ```
 
 - `%1` is the member's **username** (`@handle`) when it can be resolved, `%2` is the thread name.
+- `selfMessage` is sent when the **bot itself** is added to a group — it thanks the inviter instead of
+  welcoming itself. `{prefix}` is replaced with the live command prefix, `%2` with the group name.
 - Leave `threadIDs` empty to announce in every group; list thread IDs to limit it.
 - Set `enable` to `false` to turn either one off.
 
 ```
 Welcome @alice to Test Group! 👋
+Thanks for inviting me to Test Group 💋. Type -help to see all available commands.
 @alice left Test Group. 👋
 ```
+
+> `info` and `pfp` send their text **before** the picture, so the details read first in the chat.
 
 ---
 

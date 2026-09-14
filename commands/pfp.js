@@ -30,6 +30,6 @@ module.exports = {
 		}
 
 		const name = (profile && (profile.name || profile.username)) || target.id;
-		await message.reply({ attachment: picture, body: `🖼️ ${name} (${target.id})` });
+		await message.reply({ attachment: picture, body: `🖼️ ${name} (${target.id})`, textFirst: true });
 	}
 };

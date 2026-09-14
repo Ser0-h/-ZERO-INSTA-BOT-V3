@@ -45,7 +45,7 @@ module.exports = {
 		].filter(Boolean);
 
 		const picture = profile.profilePicture;
-		if (picture) return message.reply({ attachment: picture, body: lines.join("\n") });
+		if (picture) return message.reply({ attachment: picture, body: lines.join("\n"), textFirst: true });
 		return message.reply(lines.join("\n"));
 	}
 };

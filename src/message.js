@@ -16,9 +16,10 @@ const utils = require("./utils");
  *   message.effect(text, style) animated text effect
  *   message.typing()            typing indicator (returns a stop fn)
  *
- * `form` may be a string, or `{ body, attachment, url, effect, avatarEffect }`.
+ * `form` may be a string, or `{ body, attachment, url, effect, avatarEffect, textFirst }`.
  * Media attachments are routed to sendImage / sendAudio / sendVideo based on
  * their type, and each media source may be a URL, path, Buffer or stream.
+ * `textFirst: true` sends `body` as its own message BEFORE the attachment.
  */
 function createMessageContext({ api, event, log }) {
 	const threadID = event.threadID;
@@ -41,20 +42,27 @@ function createMessageContext({ api, event, log }) {
 		const sources = (Array.isArray(form.attachment) ? form.attachment : [form.attachment]).filter(Boolean);
 		if (!sources.length) return sendPlain(form, replyTarget);
 
+		// `textFirst: true` sends the body as a plain message BEFORE the media,
+		// so a caption-heavy result (info/pfp) reads top-to-bottom in the chat
+		// instead of appearing under the image. The media then goes out on its
+		// own, with no trailing caption to repeat.
+		const textFirst = form.textFirst === true && form.body != null && String(form.body) !== "";
+
 		return new Promise((resolve, reject) => {
 			let index = 0;
 			let firstResult = null;
-			const sendNext = () => {
-				if (index >= sources.length) return resolve(firstResult);
+			let textResult = null;
+			const sendMedia = () => {
+				if (index >= sources.length) return resolve(textResult || firstResult);
 				const current = index++;
 				const raw = sources[current];
 				const kind = utils.mediaKind(raw);
 				const source = utils.toSource(raw);
-				const caption = current === 0 && form.body != null ? String(form.body) : "";
+				const caption = current === 0 && !textFirst && form.body != null ? String(form.body) : "";
 				const done = (error, result) => {
 					if (error) return reject(error);
 					if (current === 0) firstResult = result;
-					sendNext();
+					sendMedia();
 				};
 				try {
 					// Instagram's video_attachment broadcast is media-only: captions
@@ -85,7 +93,13 @@ function createMessageContext({ api, event, log }) {
 					return reject(error);
 				}
 			};
-			sendNext();
+			if (!textFirst) return sendMedia();
+			// Text first, then the media (no caption on the media).
+			api.sendMessage({ body: String(form.body) }, threadID, (error, result) => {
+				if (error) return reject(error);
+				textResult = result;
+				sendMedia();
+			}, replyTarget);
 		});
 	}
 
