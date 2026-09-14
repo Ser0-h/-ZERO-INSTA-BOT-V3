@@ -877,6 +877,54 @@ async function main() {
 		assert.deepStrictEqual(reactions, ["⏳", "❌"], "loading then failure reactions");
 	});
 
+	/* ── unsend ── */
+	await test("unsend: registered with the Neoaz author", () => {
+		const command = registry.resolve("unsend");
+		assert.ok(command, "unsend should be registered");
+		assert.strictEqual(command.config.author, "Neoaz 🐊");
+		assert.strictEqual(command.config.category, "utility");
+	});
+
+	await test("unsend: removes the message the command replies to", async () => {
+		const command = registry.resolve("unsend");
+		const calls = [];
+		const api = {
+			unsendMessage: (id, threadID, cb) => { calls.push({ id, threadID }); cb && cb(null, {}); }
+		};
+		await command.onStart({
+			api,
+			message: { reply: () => { throw new Error("unsend must not reply"); } },
+			event: { threadID: "t1", messageID: "evt", messageReply: { messageID: "botmsg", senderID: "42" } }
+		});
+		assert.strictEqual(calls.length, 1, "expected exactly one unsend");
+		assert.strictEqual(calls[0].id, "botmsg");
+		assert.strictEqual(calls[0].threadID, "t1");
+	});
+
+	await test("unsend: does nothing without a reply", async () => {
+		const command = registry.resolve("unsend");
+		let called = false;
+		const api = { unsendMessage: () => { called = true; } };
+		await command.onStart({
+			api,
+			message: { reply: () => { throw new Error("unsend must not reply"); } },
+			event: { threadID: "t1", messageID: "evt" }
+		});
+		assert.strictEqual(called, false, "no reply target means no unsend");
+	});
+
+	await test("unsend: swallows a refused unsend without replying", async () => {
+		const command = registry.resolve("unsend");
+		const api = {
+			unsendMessage: (id, threadID, cb) => { cb && cb(new Error("not your message")); }
+		};
+		await command.onStart({
+			api,
+			message: { reply: () => { throw new Error("unsend must not reply"); } },
+			event: { threadID: "t1", messageID: "evt", messageReply: { messageID: "other", senderID: "99" } }
+		});
+	});
+
 	/* ── uptime ── */
 	await test("uptime: registered and reports the running time", async () => {
 		const command = registry.resolve("uptime");
