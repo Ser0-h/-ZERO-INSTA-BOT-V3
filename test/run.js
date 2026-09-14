@@ -378,6 +378,42 @@ async function main() {
 		assert.ok(handled, "reply handler should have run");
 	});
 
+	await test("dispatcher: reply handlers chain across repeated replies", async () => {
+		// Regression for the `ai` command stopping after the second exchange:
+		// the continuation must receive setReplyHandler from the handler
+		// argument object (it is a sibling of `event`), so every bot reply arms
+		// the handler for the next user reply.
+		const api = fakeApi();
+		const config = makeConfig();
+		const db = makeDatabase();
+		const dispatcher = createDispatcher({ api, config, registry, database: db });
+		const botMessageIDs = [];
+		const continuation = () => async ({ message, event, setReplyHandler }) => {
+			const sent = await message.reply("bot: " + event.body);
+			const id = sent && sent.messageID;
+			botMessageIDs.push(id);
+			setReplyHandler(continuation(), id);
+		};
+		registry.registerCommand({ script: {
+			config: { name: "aichain", aliases: [], cooldown: 0, role: 0, category: "ai" },
+			onStart: async ({ message, event, setReplyHandler }) => {
+				const sent = await message.reply("bot: " + event.body);
+				const id = sent && sent.messageID;
+				botMessageIDs.push(id);
+				setReplyHandler(continuation(), id);
+			}
+		} });
+		await dispatcher.handle({ type: "message", threadID: "t", messageID: "u1", senderID: "5", body: "-aichain", isGroup: false });
+		assert.ok(botMessageIDs[0], "first bot reply must expose a message id");
+		await dispatcher.handle({ type: "message_reply", threadID: "t", messageID: "u2", senderID: "5", body: "second", isGroup: false, messageReply: { messageID: botMessageIDs[0], senderID: "100" } });
+		assert.ok(botMessageIDs[1], "second exchange must produce a bot reply");
+		await dispatcher.handle({ type: "message_reply", threadID: "t", messageID: "u3", senderID: "5", body: "third", isGroup: false, messageReply: { messageID: botMessageIDs[1], senderID: "100" } });
+		assert.ok(botMessageIDs[2], "third exchange must produce a bot reply");
+		await dispatcher.handle({ type: "message_reply", threadID: "t", messageID: "u4", senderID: "5", body: "fourth", isGroup: false, messageReply: { messageID: botMessageIDs[2], senderID: "100" } });
+		assert.ok(botMessageIDs[3], "fourth exchange must produce a bot reply");
+		registry.unregisterCommand("aichain");
+	});
+
 	/* ── effects & music (message context) ── */
 	await test("message: effect routes to sendTextEffect", async () => {
 		const api = fakeApi();
