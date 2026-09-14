@@ -204,8 +204,10 @@ async function main() {
 		}
 	});
 
-	await test("config: ships with no personal server, token or admin id", () => {
-		// A fork must not inherit anyone else's endpoint or admin account.
+	await test("config: ships the shared server and no personal admin id", () => {
+		// Model A: one shared server. url + token are global and intentionally
+		// committed, so a fork works out of the box. What must NOT be committed
+		// is a personal admin id — that is per-deployment.
 		const { loadConfig } = require(path.join(root, "src/config"));
 		const urlBefore = process.env.IG_API_SERVER;
 		const tokenBefore = process.env.IG_API_TOKEN;
@@ -213,13 +215,26 @@ async function main() {
 		delete process.env.IG_API_TOKEN;
 		try {
 			const config = loadConfig();
-			assert.strictEqual(config.server.url, "", "config.json must not ship a server url");
-			assert.strictEqual(config.server.token, "", "config.json must not ship a server token");
-			assert.deepStrictEqual(config.adminBot, [], "config.json must not ship an admin account id");
+			assert.match(config.server.url, /^https?:\/\//, "config.json must ship the shared server url");
+			assert.ok(config.server.token.length > 0, "config.json must ship the shared server token");
+			assert.deepStrictEqual(config.adminBot, [], "config.json must not ship a personal admin id");
 		}
 		finally {
 			if (urlBefore !== undefined) process.env.IG_API_SERVER = urlBefore;
 			if (tokenBefore !== undefined) process.env.IG_API_TOKEN = tokenBefore;
+		}
+	});
+
+	await test("config: IG_ADMIN_BOT sets per-deployment admins", () => {
+		const { loadConfig } = require(path.join(root, "src/config"));
+		const before = process.env.IG_ADMIN_BOT;
+		process.env.IG_ADMIN_BOT = "111, 222";
+		try {
+			assert.deepStrictEqual(loadConfig().adminBot, ["111", "222"]);
+		}
+		finally {
+			if (before === undefined) delete process.env.IG_ADMIN_BOT;
+			else process.env.IG_ADMIN_BOT = before;
 		}
 	});
 
