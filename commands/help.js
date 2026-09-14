@@ -2,22 +2,6 @@
 
 const TEXT_EFFECTS = ["love", "gift", "celebration", "fire"];
 
-const EMOJI_MAP = {
-	ai: "➥",
-	media: "➥",
-	info: "➥",
-	utility: "➥",
-	profile: "➥",
-	admin: "➥",
-	system: "➥",
-	config: "➥",
-	fun: "➥",
-	tools: "➥",
-	group: "➥",
-	game: "➥",
-	others: "➥"
-};
-
 function cleanCategoryName(text) {
 	if (!text) return "others";
 	return String(text)
@@ -89,9 +73,9 @@ module.exports = {
 
 		const lines = [`━━━☠️ ${String(config.botName || "InstaBOT").toUpperCase()} ☠️━━━`];
 		for (const category of Object.keys(byCategory).sort()) {
-			const emoji = EMOJI_MAP[category] || "➥";
-			lines.push(`\n╭──『 ${category.toUpperCase()} 』 ${emoji}`);
-			lines.push(byCategory[category].sort().map(name => `× ${prefix}${name}`).join("  "));
+			lines.push(`\n╭──『 ${category.toUpperCase()} 』`);
+			const names = byCategory[category].sort();
+			lines.push(names.map((name, index) => `${index === 0 ? "➥" : " "}× ${prefix}${name}`).join("  "));
 			lines.push("╰────────────◊");
 		}
 		lines.push(`\n➥ Use: ${prefix}help [command] for details`);

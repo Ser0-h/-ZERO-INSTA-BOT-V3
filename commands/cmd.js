@@ -5,8 +5,10 @@ const path = require("path");
 const { loadDirectory, validate } = require("../src/commandLoader");
 
 const ROOT = path.resolve(__dirname, "..");
+const CUSTOM_COMMANDS = path.join(ROOT, "custom", "commands");
+const CUSTOM_EVENTS = path.join(ROOT, "custom", "events");
 
-const TEMPLATE = `module.exports = {
+const COMMAND_TEMPLATE = `module.exports = {
 	config: {
 		name: "mycommand",
 		aliases: [],
@@ -34,33 +36,101 @@ const EVENT_TEMPLATE = `module.exports = {
 	},
 
 	onEvent: async function ({ api, event, message, config }) {
-		// Runs for every matching event.
 	}
 };
 `;
 
-function listItems() {
-	const rows = [];
-	for (const dir of ["commands", "custom/commands"]) {
-		for (const entry of loadDirectory(dir, "command")) rows.push({ type: "command", ...entry });
-	}
-	return rows;
+function normalizeUrl(url) {
+	let u = String(url || "").trim();
+	if (!/^https?:\/\//i.test(u)) return null;
+	const gh = u.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/i);
+	if (gh) return `https://raw.githubusercontent.com/${gh[1]}/${gh[2]}/${gh[3]}`;
+	const bin = u.match(/^https?:\/\/pastebin\.com\/(?!raw\/)(\w+)/i);
+	if (bin) return `https://pastebin.com/raw/${bin[1]}`;
+	return u;
 }
 
-function resolveFile(sub, name) {
+function isCodeLike(text) {
+	const t = String(text || "");
+	return /module\.exports|exports\.config|function\s*\(/.test(t) && /onStart|onEvent/.test(t);
+}
+
+async function fetchText(url, timeout = 30000) {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeout);
+	try {
+		const response = await fetch(url, {
+			headers: {
+				"User-Agent": "Mozilla/5.0 (compatible; InstaBOT)",
+				"Accept": "text/plain, application/javascript, */*"
+			},
+			signal: controller.signal,
+			redirect: "follow"
+		});
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		return await response.text();
+	}
+	finally {
+		clearTimeout(timer);
+	}
+}
+
+function resolveFile(name, isEvent) {
+	const sub = isEvent ? "events" : "commands";
+	const dirs = isEvent ? ["custom/events", "events"] : ["custom/commands", "commands"];
 	const clean = String(name || "").trim();
 	if (!clean || /[^\w.-]/.test(clean)) return null;
 	const filename = clean.endsWith(".js") ? clean : clean + ".js";
-
-	const isEvent = sub.includes("event");
-	const dirs = isEvent ? ["custom/events", "events"] : ["custom/commands", "commands"];
 	for (const dir of dirs) {
 		const base = path.join(ROOT, dir);
 		const candidate = path.join(base, filename);
 		if (candidate.startsWith(base) && fs.existsSync(candidate)) return candidate;
 	}
-	const base = path.join(ROOT, isEvent ? "events" : "commands");
-	return path.join(base, filename);
+	return null;
+}
+
+function targetDir(isEvent) {
+	return isEvent ? CUSTOM_EVENTS : CUSTOM_COMMANDS;
+}
+
+function installFile(name, code, isEvent) {
+	const clean = String(name || "").trim();
+	if (!clean || /[^\w.-]/.test(clean) || !clean.endsWith(".js"))
+		return { error: "Give a valid file name ending in .js (letters, digits, _ - only)." };
+	const file = path.join(targetDir(isEvent), clean);
+	if (!file.startsWith(targetDir(isEvent))) return { error: "Invalid file name." };
+	fs.mkdirSync(targetDir(isEvent), { recursive: true });
+	fs.writeFileSync(file, String(code), "utf8");
+	return { file };
+}
+
+function loadInto(registry, file, isEvent) {
+	delete require.cache[require.resolve(file)];
+	const script = require(file);
+	validate(script, path.basename(file), isEvent ? "event" : "command");
+	script.location = path.resolve(file);
+	if (isEvent) {
+		registry.unregisterEvent(script.config.name);
+		registry.events.push(script);
+		return { name: script.config.name, location: script.location };
+	}
+	registry.unregisterCommand(script.config.name);
+	const error = registry.registerCommand({ file: path.basename(file), script, commandName: script.config.name });
+	if (error) throw new Error(error);
+	return { name: script.config.name, aliases: script.config.aliases || [], location: script.location };
+}
+
+function extractCodeFromBody(body, args) {
+	const text = String(body || "");
+	const idx = text.search(/install\b/i);
+	const after = idx >= 0 ? text.slice(idx + "install".length).trim() : args.join(" ");
+	const named = after.match(/^(\S+\.js)\s+([\s\S]+)$/);
+	if (named && /^https?:\/\//i.test(named[1]) && /\.js$/i.test(named[2].trim()))
+		return { code: null, url: named[1], fileName: named[2].trim() };
+	if (named && isCodeLike(named[2])) return { code: named[2], fileName: named[1] };
+	if (isCodeLike(after)) return { code: after, fileName: null };
+	if (named) return { code: named[2], fileName: named[1] };
+	return { code: null, fileName: null };
 }
 
 module.exports = {
@@ -72,13 +142,14 @@ module.exports = {
 		cooldown: 2,
 		role: 2,
 		noPrefix: true,
-		description: { en: "Load, unload, reload or list commands and events from commands/ and events/" },
-		usage: { en: "{p}cmd <load|unload|reload|list|template> [name]" }
+		description: { en: "Install, uninstall, load, unload or list commands and events" },
+		usage: { en: "{p}cmd <load|loadall|unload|uninstall|reload|remove|list|install> [args]" }
 	},
 
-	onStart: async function ({ message, args, config, registry }) {
+	onStart: async function ({ message, args, config, registry, event, setReactionHandler }) {
 		const action = (args.shift() || "list").toLowerCase();
-		const name = args[0];
+		const isEventFlag = args.includes("--event");
+		const rest = args.filter(a => a !== "--event");
 
 		if (action === "list") {
 			const commands = [...registry.commands.keys()].sort();
@@ -90,51 +161,174 @@ module.exports = {
 		}
 
 		if (action === "template") {
-			const which = (name || "command").toLowerCase();
-			return message.reply(which === "event" ? EVENT_TEMPLATE : TEMPLATE);
+			return message.reply((rest[0] || "command").toLowerCase() === "event" ? EVENT_TEMPLATE : COMMAND_TEMPLATE);
 		}
 
-		if (!name) return message.reply(`Usage: cmd ${action} <name>`);
-
-		const isEvent = action.includes("event") || args.includes("--event");
-		const sub = isEvent ? "events" : "commands";
-		const file = resolveFile(sub, name);
-		if (!file) return message.reply("Invalid name.");
-
-		if (action === "unload" || action === "remove" || action === "delete") {
-			const removed = isEvent ? registry.unregisterEvent(name) : registry.unregisterCommand(name);
-			if (!removed) return message.reply(`No loaded ${isEvent ? "event" : "command"} named "${name}".`);
-			return message.reply(`Unloaded ${isEvent ? "event" : "command"} "${name}".`);
+		if (action === "loadall") {
+			const ok = [];
+			const fail = [];
+			for (const dir of ["commands", "custom/commands", "events", "custom/events"]) {
+				const isEvent = dir.includes("event");
+				for (const entry of loadDirectory(dir, isEvent ? "event" : "command")) {
+					try {
+						loadInto(registry, entry.script.location, isEvent);
+						ok.push(entry.script.config.name);
+					}
+					catch (error) {
+						fail.push(`${entry.script.config.name}: ${String(error.message || error)}`);
+					}
+				}
+			}
+			return message.reply(
+				`Reloaded ${ok.length} script(s).\n` + (fail.length ? `Failed:\n${fail.join("\n")}` : "")
+			);
 		}
 
-		if (action === "load" || action === "reload") {
-			if (!fs.existsSync(file)) {
+		if (action === "install" || action === "add") {
+			const reply = event.messageReply;
+			let fileName = rest.find(a => /\.js$/i.test(a) && !/^https?:\/\//i.test(a)) || null;
+			let code = null;
+			let source = null;
+
+			const textish = extractCodeFromBody(event.body, rest);
+			if (textish.fileName) fileName = fileName || textish.fileName;
+
+			const urlArg = textish.url || rest.find(a => /^https?:\/\//i.test(a));
+
+			if (textish.code) {
+				code = textish.code;
+				source = "code";
+			}
+			else if (reply && reply.body && isCodeLike(reply.body)) {
+				code = reply.body;
+				source = "reply";
+			}
+			else if (reply && Array.isArray(reply.attachments) && reply.attachments.some(a => a && (a.url || a.largePreviewUrl))) {
+				const att = reply.attachments.find(a => a && (a.url || a.largePreviewUrl));
+				const url = normalizeUrl(att.url || att.largePreviewUrl);
+				if (url) {
+					try {
+						code = await fetchText(url);
+						source = "reply-attachment";
+					}
+					catch (error) {
+						return message.reply(`Could not download the file: ${String(error.message || error)}`);
+					}
+				}
+			}
+			else if (urlArg) {
+				const url = normalizeUrl(urlArg);
+				if (!url) return message.reply("Give a valid http(s) URL.");
+				try {
+					code = await fetchText(url);
+					source = url;
+				}
+				catch (error) {
+					return message.reply(`Could not download the file: ${String(error.message || error)}`);
+				}
+			}
+
+			if (!code) {
 				return message.reply(
-					`File not found: ${path.relative(ROOT, file)}\n` +
-					`Write it there, or use "${config.prefix}cmd template" to get a starter.`
+					"Nothing to install. Give a URL, reply to a message containing the code, " +
+					"or pass the code directly:\n" +
+					`${config.prefix}cmd install <url>\n` +
+					`${config.prefix}cmd install <name.js> <code>\n` +
+					`${config.prefix}cmd install <code>`
 				);
 			}
-			try {
-				delete require.cache[require.resolve(file)];
-				const script = require(file);
-				validate(script, path.basename(file), isEvent ? "event" : "command");
 
-				if (isEvent) {
-					registry.unregisterEvent(script.config.name);
-					registry.events.push(script);
+			if (!fileName) fileName = "custom_" + Date.now().toString(36) + ".js";
+			if (!fileName.endsWith(".js")) fileName += ".js";
+			if (!/^[\w.-]+\.js$/.test(fileName)) return message.reply("Invalid file name.");
+
+			const looksLikeEvent = /onEvent\s*[:(]/.test(code) && !/onStart/.test(code);
+			const isEvent = isEventFlag || looksLikeEvent;
+			const dest = path.join(targetDir(isEvent), fileName);
+
+			if (fs.existsSync(dest)) {
+				const sent = await message.reply(
+					`"${fileName}" already exists. React to this message to overwrite it.`
+				);
+				if (typeof setReactionHandler === "function" && sent && sent.messageID) {
+					setReactionHandler(async ({ event: reactionEvent, message: reactionMessage }) => {
+						if (String(reactionEvent.userID || reactionEvent.senderID) !== String(event.senderID)) return;
+						try {
+							const done = installFile(fileName, code, isEvent);
+							if (done.error) return reactionMessage.reply(done.error);
+							const loaded = loadInto(registry, done.file, isEvent);
+							await reactionMessage.reply(`Installed "${loaded.name}" from ${source || "code"} and reloaded it live.`);
+						}
+						catch (error) {
+							await reactionMessage.reply(`Install failed: ${String(error.message || error)}`);
+						}
+					}, sent.messageID);
 				}
-				else {
-					registry.unregisterCommand(script.config.name);
-					const error = registry.registerCommand({ file: path.basename(file), script, commandName: script.config.name });
-					if (error) return message.reply(error);
-				}
-				return message.reply(`${action === "reload" ? "Reloaded" : "Loaded"} ${isEvent ? "event" : "command"} "${script.config.name}".`);
+				return sent;
+			}
+
+			try {
+				const done = installFile(fileName, code, isEvent);
+				if (done.error) return message.reply(done.error);
+				const loaded = loadInto(registry, done.file, isEvent);
+				return message.reply(
+					`Installed "${loaded.name}" (${isEvent ? "event" : "command"}) from ${source || "code"} ` +
+					`to custom/${isEvent ? "events" : "commands"}/${fileName} and reloaded it live.`
+				);
+			}
+			catch (error) {
+				return message.reply(`Install failed: ${String(error.message || error)}`);
+			}
+		}
+
+		const name = rest[0];
+		if (!name) return message.reply(`Usage: ${config.prefix}cmd ${action} <name>`);
+
+		const isEvent = isEventFlag || action.includes("event");
+		const file = resolveFile(name, isEvent);
+
+		if (action === "unload" || action === "reload" || action === "load") {
+			if (!file) {
+				return message.reply(
+					`File not found for "${name}". ` +
+					`Looked in ${targetDir(isEvent)} and ${path.join(ROOT, isEvent ? "events" : "commands")}.`
+				);
+			}
+			if (action === "unload") {
+				const removed = isEvent ? registry.unregisterEvent(name) : registry.unregisterCommand(name);
+				if (!removed) return message.reply(`No loaded ${isEvent ? "event" : "command"} named "${name}".`);
+				return message.reply(`Unloaded ${isEvent ? "event" : "command"} "${name}" live.`);
+			}
+			try {
+				const loaded = loadInto(registry, file, isEvent);
+				return message.reply(`Reloaded ${isEvent ? "event" : "command"} "${loaded.name}" live.`);
 			}
 			catch (error) {
 				return message.reply(`Failed to load "${name}": ${String(error.message || error)}`);
 			}
 		}
 
-		return message.reply(`Unknown action "${action}". Use load, unload, reload, list or template.`);
+		if (action === "remove" || action === "uninstall" || action === "delete") {
+			const loadedScript = isEvent
+				? registry.events.find(s => String(s.config.name).toLowerCase() === name.toLowerCase())
+				: registry.resolve(name);
+			const located = loadedScript && loadedScript.location ? path.resolve(loadedScript.location) : file;
+			const removed = isEvent ? registry.unregisterEvent(name) : registry.unregisterCommand(name);
+			let deleted = false;
+			if (located && located.startsWith(targetDir(isEvent))) {
+				try {
+					fs.unlinkSync(located);
+					deleted = true;
+				}
+				catch (_) { }
+			}
+			if (!removed && !deleted) return message.reply(`No loaded ${isEvent ? "event" : "command"} named "${name}".`);
+			return message.reply(
+				`${deleted ? "Uninstalled" : "Unloaded"} ${isEvent ? "event" : "command"} "${name}" live` +
+				`${deleted ? ` and deleted ${path.relative(ROOT, located)}` : ""}.`
+			);
+		}
+
+		return message.reply(`Unknown action "${action}". Use load, loadall, unload, uninstall, reload, list, template or install.`);
 	}
 };

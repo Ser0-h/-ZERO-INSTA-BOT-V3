@@ -355,9 +355,9 @@ async function main() {
 	});
 
 	/* ── new commands through the dispatcher ── */
-	async function runCommand(body, { config, db, api, senderID = "999" } = {}) {
+	async function runCommand(body, { config, db, api, senderID = "999", extraEvent } = {}) {
 		const dispatcher = createDispatcher({ api, config, registry, database: db });
-		await dispatcher.handle({ type: "message", threadID: "t", messageID: "evt", senderID, body, isGroup: false });
+		await dispatcher.handle(Object.assign({ type: "message", threadID: "t", messageID: "evt", senderID, body, isGroup: false }, extraEvent || {}));
 		return api.calls.filter(c => c.method === "sendMessage").map(c => c.form.body).join("\n");
 	}
 
@@ -446,6 +446,84 @@ async function main() {
 		out = await runCommand("-cmd reload joke", { api, db, config: makeConfig() });
 		assert.ok(/Reloaded/.test(out));
 		assert.ok(registry.resolve("joke"), "joke should be back");
+	});
+
+	await test("cmd: installs a command from direct code and loads it live", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const fileName = "testinstall_" + Date.now().toString(36) + ".js";
+		const code = 'module.exports = { config: { name: "zzztestcmd", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("installed ok") };';
+		try {
+			const out = await runCommand(`-cmd install ${fileName} ${code}`, { api, db, config: makeConfig() });
+			assert.ok(/Installed "zzztestcmd"/.test(out), "should report the install, got: " + out);
+			assert.ok(registry.resolve("zzztestcmd"), "the command must be live without restart");
+			const fs = require("fs");
+			assert.ok(fs.existsSync(require("path").join(__dirname, "..", "custom", "commands", fileName)), "the file must be written");
+		}
+		finally {
+			registry.unregisterCommand("zzztestcmd");
+			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "custom", "commands", fileName)); } catch (_) { }
+		}
+	});
+
+	await test("cmd: installs a command from a replied code message", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const fileName = "testreply_" + Date.now().toString(36) + ".js";
+		const code = 'module.exports = { config: { name: "zzzreplycmd", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("replied ok") };';
+		try {
+			const out = await runCommand(`-cmd install ${fileName}`, {
+				api, db, config: makeConfig(),
+				extraEvent: { messageReply: { messageID: "m2", senderID: "999", body: code, attachments: [] } }
+			});
+			assert.ok(/Installed "zzzreplycmd"/.test(out), "should install from the reply, got: " + out);
+			assert.ok(registry.resolve("zzzreplycmd"), "the replied command must be live");
+		}
+		finally {
+			registry.unregisterCommand("zzzreplycmd");
+			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "custom", "commands", fileName)); } catch (_) { }
+		}
+	});
+
+	await test("cmd: installs a command from a URL", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const fileName = "testurl_" + Date.now().toString(36) + ".js";
+		const originalFetch = global.fetch;
+		const code = 'module.exports = { config: { name: "zzzurlcmd", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("url ok") };';
+		global.fetch = async () => ({ ok: true, text: async () => code });
+		try {
+			const out = await runCommand(`-cmd install https://example.com/thing.js ${fileName}`, { api, db, config: makeConfig() });
+			assert.ok(/Installed "zzzurlcmd"/.test(out), "should install from the url, got: " + out);
+			assert.ok(registry.resolve("zzzurlcmd"), "the url command must be live");
+		}
+		finally {
+			global.fetch = originalFetch;
+			registry.unregisterCommand("zzzurlcmd");
+			try { require("fs").unlinkSync(require("path").join(__dirname, "..", "custom", "commands", fileName)); } catch (_) { }
+		}
+	});
+
+	await test("cmd: uninstall removes the file and unloads it live", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const path = require("path");
+		const fs = require("fs");
+		const fileName = "testuninstall_" + Date.now().toString(36) + ".js";
+		const code = 'module.exports = { config: { name: "zzzuninst", category: "custom", description: { en: "x" } }, onStart: async ({ message }) => message.reply("x") };';
+		const dest = path.join(__dirname, "..", "custom", "commands", fileName);
+		try {
+			await runCommand(`-cmd install ${fileName} ${code}`, { api, db, config: makeConfig() });
+			assert.ok(fs.existsSync(dest), "file should exist after install");
+			const out = await runCommand("-cmd uninstall zzzuninst", { api, db, config: makeConfig() });
+			assert.ok(/Uninstalled/.test(out), "should report uninstall, got: " + out);
+			assert.ok(!registry.resolve("zzzuninst"), "command must be gone live");
+			assert.ok(!fs.existsSync(dest), "the file must be deleted");
+		}
+		finally {
+			registry.unregisterCommand("zzzuninst");
+			try { fs.unlinkSync(dest); } catch (_) { }
+		}
 	});
 
 	await test("eval: evaluates an expression for a bot admin", async () => {
@@ -936,6 +1014,8 @@ async function main() {
 		assert.ok(/INSTABOT/.test(text), "should name the bot");
 		assert.ok(/INFO/.test(text), "should list the info category");
 		assert.ok(/× -help/.test(text), "should list commands with the prefix");
+		assert.ok(/➥× -/.test(text), "the ➥ icon should prefix the first command in each category");
+		assert.ok(!/』 ➥/.test(text), "the icon must not sit on the category header");
 		assert.ok(["love", "gift", "celebration", "fire"].includes(sent.effect), "should send with a random text effect");
 	});
 
