@@ -179,6 +179,57 @@ async function main() {
 		}
 	});
 
+	await test("config: the environment overrides a committed server url and token", () => {
+		// Regression: forkers set IG_API_SERVER in their host dashboard, but a
+		// committed config.json still pointed the bot at the original author's
+		// server (and so at that author's Instagram account). The environment
+		// must always win.
+		const { loadConfig } = require(path.join(root, "src/config"));
+		const urlBefore = process.env.IG_API_SERVER;
+		const tokenBefore = process.env.IG_API_TOKEN;
+		process.env.IG_API_SERVER = "https://my-own-server.example";
+		process.env.IG_API_TOKEN = "my-own-token";
+		try {
+			const config = loadConfig();
+			assert.strictEqual(config.server.url, "https://my-own-server.example",
+				"IG_API_SERVER must override config.server.url");
+			assert.strictEqual(config.server.token, "my-own-token",
+				"IG_API_TOKEN must override config.server.token");
+		}
+		finally {
+			if (urlBefore === undefined) delete process.env.IG_API_SERVER;
+			else process.env.IG_API_SERVER = urlBefore;
+			if (tokenBefore === undefined) delete process.env.IG_API_TOKEN;
+			else process.env.IG_API_TOKEN = tokenBefore;
+		}
+	});
+
+	await test("config: ships with no personal server, token or admin id", () => {
+		// A fork must not inherit anyone else's endpoint or admin account.
+		const { loadConfig } = require(path.join(root, "src/config"));
+		const urlBefore = process.env.IG_API_SERVER;
+		const tokenBefore = process.env.IG_API_TOKEN;
+		delete process.env.IG_API_SERVER;
+		delete process.env.IG_API_TOKEN;
+		try {
+			const config = loadConfig();
+			assert.strictEqual(config.server.url, "", "config.json must not ship a server url");
+			assert.strictEqual(config.server.token, "", "config.json must not ship a server token");
+			assert.deepStrictEqual(config.adminBot, [], "config.json must not ship an admin account id");
+		}
+		finally {
+			if (urlBefore !== undefined) process.env.IG_API_SERVER = urlBefore;
+			if (tokenBefore !== undefined) process.env.IG_API_TOKEN = tokenBefore;
+		}
+	});
+
+	await test("config: a thrown loadAccount error tells you to copy the example file", () => {
+		const { loadConfig } = require(path.join(root, "src/config"));
+		assert.ok(loadConfig(), "config must load");
+		const source = require("fs").readFileSync(path.join(root, "src", "config.js"), "utf8");
+		assert.match(source, /account\.example\.txt/, "the missing-cookie error must point at the example file");
+	});
+
 	await test("bot: adopts the session id the server assigns (not a configured one)", async () => {
 		// The bot starts with no id, posts its cookies, and adopts result.botId.
 		const { pushCookies } = require(path.join(root, "auth.js"));
