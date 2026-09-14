@@ -63,12 +63,14 @@ InstaBOT does **not** log in to Instagram itself. It connects to your deployed
 # 1. Install dependencies (none required at runtime)
 npm install
 
-# 2. Point the bot at your deployed server. Set both values in config.json:
+# 2. Point the bot at YOUR deployed server. Set both values in config.json:
 #      "server": {
 #        "url":   "https://<your-server-host>",   # e.g. the Render/Railway URL
 #        "token": "<IG_TOKEN from the server>"    # must match the server's IG_TOKEN
 #      }
 #    Or set the environment variables IG_API_SERVER and IG_API_TOKEN.
+#    The environment ALWAYS wins over config.json, so a fork can never end up
+#    pointing at whoever published the repo.
 
 # 3. Adjust prefix / adminBot / language in config.json
 
@@ -94,6 +96,16 @@ A `Dockerfile` is included. Both platforms can build it directly:
 | --- | --- | --- |
 | `IG_API_SERVER` | ✅ | Deployed ig-chat-api-server URL (e.g. `https://ig-server.onrender.com`) |
 | `IG_API_TOKEN` | ✅ | Must equal the server's `IG_TOKEN` |
+
+> **Set these in your host's dashboard, not in `config.json`.** `config.json`
+> ships with an empty server url/token, and the environment overrides whatever
+> is written there, so a forked repo can never point your bot at someone else's
+> server. If your messages go out from an account you don't recognize, your bot
+> is talking to another server — check `IG_API_SERVER`.
+
+> **Your cookies are a password.** `account.txt` is git-ignored. Copy
+> `account.example.txt` to `account.txt` locally, or set the cookies as secrets
+> on the host. Never commit them.
 
 > **No bot id to configure.** The server identifies each session by the account's
 > own Instagram id (`ds_user_id` in the cookies) and returns that id to the bot,
