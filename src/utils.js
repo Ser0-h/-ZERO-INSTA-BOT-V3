@@ -154,6 +154,48 @@ function isNumericID(value) {
 }
 
 /**
+ * Avatar effects send `power_up_data={style:1000..1003}` together with an
+ * avatar sticker id as `attachment_fbid`. Instagram scopes that sticker id to
+ * the conversation: the same id is accepted in the thread it belongs to and
+ * refused (403 error_code 1545003) in any other, whichever effect is used, and
+ * whichever style it is paired with. There is no universal id — the app reads
+ * the thread's id from its own state and Instagram has no public endpoint that
+ * returns it, so a thread's id has to be learned from one captured send in that
+ * thread.
+ *
+ * `config.avatarEffects.stickers` therefore maps a thread id to its sticker id.
+ * One id per thread covers all four effects. A "*" entry is used as a fallback
+ * for threads with no specific entry.
+ *
+ * Shape:
+ *   "avatarEffects": {
+ *     "stickers": {
+ *       "340282366841710301281153722859304413646": "1008287245559346",
+ *       "*": "2601937316988106"
+ *     }
+ *   }
+ *
+ * Returns the sticker id string for the thread, or null to use the built-in
+ * default. `effect` is accepted for call compatibility but does not change the
+ * result: the id is per thread, not per effect.
+ */
+function resolveAvatarSticker(config, threadID, effect) { // eslint-disable-line no-unused-vars
+	const table = config && config.avatarEffects && config.avatarEffects.stickers;
+	if (!table || typeof table !== "object") return null;
+
+	const pick = (entry) => {
+		if (entry == null) return null;
+		if (typeof entry === "object") {
+			return entry.stickerId != null ? String(entry.stickerId)
+				: (entry.attachmentFbid != null ? String(entry.attachmentFbid) : null);
+		}
+		return String(entry);
+	};
+
+	return pick(table[String(threadID)]) || pick(table["*"]);
+}
+
+/**
  * Pull an Instagram username out of user input: a profile URL
  * (https://www.instagram.com/name?…, /name/, /name), an @handle, or a bare
  * handle. Returns the bare username, or null when the input is not a handle.
@@ -363,6 +405,7 @@ module.exports = {
 	isBuffer,
 	isUrl,
 	isNumericID,
+	resolveAvatarSticker,
 	extensionOf,
 	extensionFromMime,
 	mediaKind,
