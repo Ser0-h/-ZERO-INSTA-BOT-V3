@@ -87,39 +87,42 @@ npm test
 
 A `Dockerfile` is included. Both platforms can build it directly:
 
-- **Render:** *New → Web Service* → connect this repo → Environment: **Docker** →
-  set `IG_API_SERVER` and `IG_API_TOKEN` → deploy.
-- **Railway:** *New Project → Deploy from GitHub* → it detects the `Dockerfile` →
-  set `IG_API_SERVER` and `IG_API_TOKEN` in Variables.
+- **Render:** *New → Web Service* → connect this repo → Environment: **Docker** → deploy.
+- **Railway:** *New Project → Deploy from GitHub* → it detects the `Dockerfile` → deploy.
+
+The bot works out of the box: `config.json` already points at the shared
+ig-chat-api-server. The only thing you must supply is **your own cookies**.
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `IG_API_SERVER` | ✅ | Deployed ig-chat-api-server URL (e.g. `https://ig-server.onrender.com`) |
-| `IG_API_TOKEN` | ✅ | Must equal the server's `IG_TOKEN` |
+| `IG_API_SERVER` | — | Only to use a *different* server than the shared one in `config.json` |
+| `IG_API_TOKEN` | — | The token for that server (must equal its `IG_TOKEN`) |
+| `IG_ADMIN_BOT` | — | Comma-separated account id(s) allowed to run admin commands |
 
-> **Set these in your host's dashboard, not in `config.json`.** `config.json`
-> ships with an empty server url/token, and the environment overrides whatever
-> is written there, so a forked repo can never point your bot at someone else's
-> server. If your messages go out from an account you don't recognize, your bot
-> is talking to another server — check `IG_API_SERVER`.
+> **One shared server, many accounts.** The `server.url` and `server.token` in
+> `config.json` are the **same for every bot** — they are global, not per-user.
+> One ig-chat-api-server instance hosts many Instagram accounts at once, and each
+> bot is identified by the **account id (`ds_user_id`) inside its own cookies**,
+> which it pushes to the server. The server reports that id back and the bot
+> adopts it. So the token is a shared access key, not a personal secret, and no
+> bot ever drives another account.
+>
+> `IG_API_SERVER` / `IG_API_TOKEN` override the values in `config.json`; set them
+> only if you run a *separate* server (your own deployment) rather than the
+> shared one.
 
 > **Your cookies are a password.** `account.txt` is git-ignored. Copy
 > `account.example.txt` to `account.txt` locally, or set the cookies as secrets
-> on the host. Never commit them.
+> on the host. Never commit them. Your cookies are the only thing that decides
+> which account your bot runs as.
 
 > **No bot id to configure.** The server identifies each session by the account's
 > own Instagram id (`ds_user_id` in the cookies) and returns that id to the bot,
 > which adopts it automatically. There is no `IG_BOT_ID` and no `server.botId`.
 
-> **One server or many?** The url + token identify a *server*, not a user.
->
-> - **Each user runs their own server** (a fork should do this): everyone sets
->   their own `IG_API_SERVER` and `IG_API_TOKEN`.
-> - **One shared server for several accounts**: everyone uses the *same* url and
->   token, and the server keeps sessions apart by the account id in each bot's
->   cookies. The token is then a shared access password, not a personal secret.
->
-> Either way a bot only ever drives the account whose cookies it pushed.
+> **Bot admins are per-deployment.** `adminBot` ships empty. Put your own
+> Instagram id there (or set `IG_ADMIN_BOT=id1,id2`) to allow admin-only
+> commands for your account.
 
 ---
 

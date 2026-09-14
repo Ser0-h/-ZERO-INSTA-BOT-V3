@@ -30,7 +30,13 @@ function loadConfig() {
 	config.botName = config.botName || "InstaBOT";
 	config.prefix = typeof config.prefix === "string" ? config.prefix : "-";
 	config.language = config.language || "en";
+	// Bot admins are the accounts allowed to run admin-only commands. They are
+	// per-deployment, never baked into the repo: set them in config.json, or in
+	// the environment as a comma-separated IG_ADMIN_BOT (it wins).
 	config.adminBot = Array.isArray(config.adminBot) ? config.adminBot.map(String).filter(Boolean) : [];
+	if (process.env.IG_ADMIN_BOT && process.env.IG_ADMIN_BOT.trim()) {
+		config.adminBot = process.env.IG_ADMIN_BOT.split(",").map(s => s.trim()).filter(Boolean);
+	}
 	config.whiteList = config.whiteList || { enable: false, userIDs: [], threadIDs: [] };
 	config.whiteList.userIDs = (config.whiteList.userIDs || []).map(String);
 	config.whiteList.threadIDs = (config.whiteList.threadIDs || []).map(String);
