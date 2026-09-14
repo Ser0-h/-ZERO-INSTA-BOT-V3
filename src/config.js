@@ -75,19 +75,11 @@ function loadConfig() {
 	config.server = config.server || {};
 	config.server.url = config.server.url || process.env.IG_API_SERVER || "";
 	config.server.token = config.server.token || process.env.IG_API_TOKEN || "";
-	// Which account this bot owns on a multi-bot server. The server now keys each
-	// session by the Instagram account id, so the bot defaults to its own
-	// `ds_user_id` (read straight from account.txt, before any login). An
-	// explicit botId in config.json / IG_BOT_ID still wins for operators who
-	// filed their session under a different name.
-	const explicitBotId = String(config.server.botId || process.env.IG_BOT_ID || "").trim();
-	if (explicitBotId) config.server.botId = explicitBotId;
-	else {
-		let accountId = null;
-		try { accountId = accountIdFromAccount(); }
-		catch (_) { /* account.txt may be absent at config time; login will complain */ }
-		config.server.botId = accountId || "default";
-	}
+	// There is deliberately no bot id to configure. The server identifies each
+	// session by the account's own Instagram id, and the bot learns its id from
+	// the server's /cookies reply (see auth.js). Any legacy botId in config.json
+	// / IG_BOT_ID is ignored.
+	delete config.server.botId;
 	config.server.timeout = Number(config.server.timeout) || 60000;
 
 	// Welcome / leave announcements for group threads.
@@ -200,18 +192,6 @@ function loadAccount() {
 	return cookies;
 }
 
-/**
- * The Instagram account id this bot signs in as, read from its own cookies
- * (`ds_user_id`). Available before login, which is what lets the bot identify
- * its server session by the account id. Returns null if it is not present.
- */
-function accountIdFromAccount() {
-	const cookies = loadAccount();
-	const found = cookies.find(cookie => cookie.key === "ds_user_id" || cookie.key === "userid");
-	const value = found && found.value != null ? String(found.value).trim() : "";
-	return value || null;
-}
-
 module.exports = {
 	ROOT,
 	configPath,
@@ -219,7 +199,6 @@ module.exports = {
 	loadConfig,
 	saveConfig,
 	loadAccount,
-	accountIdFromAccount,
 	normalizeCookies,
 	netScapeToCookies,
 	cookieHeaderToCookies,

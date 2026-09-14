@@ -162,9 +162,10 @@ function normalizeSettings(options) {
 	return {
 		base: parseServer(server),
 		token,
-		// Which account this bot owns on a multi-bot server. The server keys
-		// each Instagram session by this id; unset means the "default" session.
-		botId: String(options.botId || process.env.IG_BOT_ID || "default").trim() || "default",
+		// Which session to address. Normally the server tells us the id in the
+		// /cookies reply and we adopt it here; until then, or when the bot has no
+		// cookies to push, an empty id lets the server use its single session.
+		botId: String(options.botId || process.env.IG_BOT_ID || "").trim(),
 		timeout: Number(options.timeout) || 60000,
 		selfListen: options.selfListen === true || options.selfListen === "true"
 	};
@@ -218,6 +219,10 @@ function request(settings, method, args, callbackIndex) {
  * deployment can keep cookies on the bot (account.txt / IG_COOKIES) instead of
  * the server. Best-effort: a failure here is not fatal — the server may already
  * have its own cookies.
+ *
+ * The response carries `result.botId`: the session id the server assigned to
+ * these cookies (the account's Instagram id). The bot adopts it for every later
+ * call, so no id is ever configured on the bot.
  */
 function pushCookies(settings, cookies) {
 	return new Promise(resolve => {
@@ -239,11 +244,21 @@ function pushCookies(settings, cookies) {
 			},
 			timeout: settings.timeout
 		}, res => {
-			res.resume();
-			res.on("end", () => resolve({ status: res.statusCode }));
+			const chunks = [];
+			res.on("data", chunk => chunks.push(chunk));
+			res.on("end", () => {
+				let botId = null;
+				try {
+					const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+					const result = body && body.result;
+					if (result && result.botId) botId = String(result.botId);
+				}
+				catch (_) { /* body optional */ }
+				resolve({ status: res.statusCode, botId });
+			});
 		});
 		req.on("timeout", () => req.destroy(new Error("cookie push timed out")));
-		req.on("error", () => resolve({ error: true }));
+		req.on("error", () => resolve({ error: true, botId: null }));
 		req.write(payload);
 		req.end();
 	});
@@ -453,7 +468,14 @@ function login(options, callback) {
 		});
 	}
 
-	(seed ? seed.then(value => pushCookies(settings, value)).catch(() => { }) : Promise.resolve())
+	(seed
+		? seed.then(value => pushCookies(settings, value)).then(outcome => {
+			// Adopt the session id the server assigned to these cookies. The bot
+			// is never configured with an id; the server derives it from the
+			// account and reports it here.
+			if (outcome && outcome.botId) settings.botId = outcome.botId;
+		}).catch(() => { })
+		: Promise.resolve())
 		.then(() => connect(Math.max(1, Math.floor(settings.timeout / 3000))))
 		.then(id => {
 			api._userID = id != null ? String(id) : null;
@@ -486,3 +508,4 @@ module.exports = login;
 module.exports.login = login;
 module.exports.METHODS = METHODS.slice();
 module.exports.EventStream = EventStream;
+module.exports.pushCookies = pushCookies;

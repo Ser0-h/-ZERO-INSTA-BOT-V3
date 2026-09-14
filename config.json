@@ -14,9 +14,8 @@
 	"server": {
 		"url": "https://nkx-ica.neokex.xyz",
 		"token": "chat.api.toke.neokex.ica.token.can.change.a9y.2ime.ok",
-		"botId": "",
 		"timeout": 60000,
-		"notes": "REQUIRED for the deployed bot. Set `url` to your deployed ig-chat-api-server URL (https://<your-server-host>, NOT http://127.0.0.1:8787) and `token` to the server's IG_TOKEN. Leave `botId` empty so the bot identifies itself by its own Instagram account id (read from account.txt); the server keys each session by that id, so a bot always reconnects to its own session. Set it only if you filed the session under a different name. Empty url/token means read from the environment: IG_API_SERVER / IG_API_TOKEN / IG_BOT_ID."
+		"notes": "REQUIRED for the deployed bot. Set `url` to your deployed ig-chat-api-server URL (https://<your-server-host>, NOT http://127.0.0.1:8787) and `token` to the server's IG_TOKEN. There is no bot id to set: the server identifies each session by the bot's own Instagram account id and returns it when the bot pushes its cookies, so the bot adopts it automatically. Empty url/token means read from the environment: IG_API_SERVER / IG_API_TOKEN."
 	},
 	"account": {
 		"proxy": null,

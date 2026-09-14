@@ -94,14 +94,10 @@ A `Dockerfile` is included. Both platforms can build it directly:
 | --- | --- | --- |
 | `IG_API_SERVER` | ✅ | Deployed ig-chat-api-server URL (e.g. `https://ig-server.onrender.com`) |
 | `IG_API_TOKEN` | ✅ | Must equal the server's `IG_TOKEN` |
-| `IG_BOT_ID` | — | Override the session id. Leave unset: the bot uses its own Instagram account id |
 
-> **No bot id to configure.** The server keys each session by the Instagram
-> account id (`ds_user_id` in the cookies), and the bot sends its own id
-> automatically — read from `account.txt` before login. So a bot always
-> reconnects to its own session. Set `IG_BOT_ID` (or `server.botId`) only if you
-> filed the session under a custom name (e.g. `accounts/salesbot.txt`).
-
+> **No bot id to configure.** The server identifies each session by the account's
+> own Instagram id (`ds_user_id` in the cookies) and returns that id to the bot,
+> which adopts it automatically. There is no `IG_BOT_ID` and no `server.botId`.
 
 ---
 
@@ -120,34 +116,28 @@ Set both values (or the environment fallbacks) and the bot is ready:
 "server": {
   "url": "https://<your-server-host>",
   "token": "<IG_TOKEN from the server>",
-  "botId": "",
   "timeout": 60000
 }
 ```
 
 On connect the bot reads its cookies — `IG_COOKIES` if set, else `account.txt` —
-and sends them to the server (`POST /cookies`). The server uses yours when it has
-none of its own; a server-side cookie file/env still takes priority. If the
-server already has cookies, the bot's are simply ignored.
+and sends them to the server (`POST /cookies`). The server replies with the
+session id it assigned (the account's Instagram id), and the bot uses it for the
+event stream and every request. **There is nothing to set for the session id.**
+
+> **How the bot finds its session.** The server derives the id from the cookies'
+> `ds_user_id`, so the bot always lands on the session that owns its cookies —
+> even after a restart, with no configuration and no chance of a
+> "wrong bot id" mismatch.
 
 > **Which cookies win?** The server's own sources (`accounts/<id>.txt`,
 > `IG_ACCOUNTS`, `IG_COOKIES` on the *server*) take priority; the bot's pushed
 > cookies are a fallback. Either model works — pick one place to manage them.
+> If you filed the server session under a custom name (`accounts/salesbot.txt`),
+> set the same name in the bot's environment as `IG_BOT_ID=salesbot`; otherwise
+> leave it unset.
 
-`botId` selects which session this bot owns. Leave it **empty**: the bot sends
-its own Instagram account id (from `ds_user_id` in its cookies), which is exactly
-how the server names the session. Set it only to match a session you filed under
-a custom name (e.g. `"salesbot"`).
-
-> **⚠️ Only mismatch to avoid.** If you named the session on the server
-> (e.g. `accounts/salesbot.txt`), set the same `IG_BOT_ID=salesbot` here.
-> Otherwise leave `IG_BOT_ID` unset and the bot's account id lines up with the
-> session the server created from its cookies.
-
-> **⚠️ Which account runs.** Whatever the id, it must resolve to the cookies this
-> bot should use. With a single account and no explicit names, that is automatic.
-
-Environment fallbacks: `IG_API_SERVER`, `IG_API_TOKEN`, and `IG_BOT_ID`.
+Environment fallbacks: `IG_API_SERVER`, `IG_API_TOKEN`.
 
 ```bash
 IG_API_SERVER="https://<your-server-host>" \
@@ -216,7 +206,6 @@ locally and streamed to the server as bytes.
 | `adminBot` | Array of user IDs with bot-admin rights |
 | `env.token` / `env.url` | Optional secrets/endpoints; overridden by the environment |
 | `server.url` / `server.token` | Connect to a remote ig-chat-api server (skips cookies) |
-| `server.botId` | Session id. Leave empty to use the bot's own Instagram account id |
 | `server.timeout` | Server request timeout in ms |
 | `music.enable` | Turn the `sing` music search on/off |
 | `music.apiUrl` / `music.apiToken` | Your own music server (blank = use Instagram's catalogue) |
@@ -244,7 +233,7 @@ Other environment variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `IG_API_SERVER` / `IG_API_TOKEN` / `IG_BOT_ID` | Server URL, token, and which account this bot owns (see above) |
+| `IG_API_SERVER` / `IG_API_TOKEN` | Server URL and token (see above) |
 | `IG_COOKIES` | Instagram cookies to send to the server (wins over `account.txt`). Accepts a header string, JSON array, or Netscape text |
 | `IG_MAX_MEDIA_BYTES` | Largest local media file the bot will upload, in bytes (default 5 MB). Base64 adds ~33%, so keep it under the server's `IG_MAX_BODY_BYTES` (default 8 MB) |
 | `PORT` | Port for the built-in status server (default `8080`). Set `PORT=0` to disable it (pure worker mode) |
