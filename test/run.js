@@ -441,11 +441,20 @@ async function main() {
 		const api = fakeApi();
 		const db = makeDatabase();
 		let out = await runCommand("-cmd unload joke", { api, db, config: makeConfig() });
-		assert.ok(/Unloaded/.test(out));
+		assert.ok(/✅ Unloaded/.test(out));
 		assert.strictEqual(registry.resolve("joke"), null);
 		out = await runCommand("-cmd reload joke", { api, db, config: makeConfig() });
-		assert.ok(/Reloaded/.test(out));
+		assert.ok(/✅ Reloaded/.test(out));
 		assert.ok(registry.resolve("joke"), "joke should be back");
+	});
+
+	await test("cmd: responses carry ✅ / ❌ status icons", async () => {
+		const api = fakeApi();
+		const db = makeDatabase();
+		const ok = await runCommand("-cmd list", { api, db, config: makeConfig() });
+		assert.ok(/📦/.test(ok), "list should use the package icon");
+		const bad = await runCommand("-cmd unload doesnotexist", { api, db, config: makeConfig() });
+		assert.ok(/❌/.test(bad), "a missing command should use the cross icon");
 	});
 
 	await test("cmd: installs a command from direct code and loads it live", async () => {

@@ -150,8 +150,8 @@ module.exports = {
 			const commands = [...registry.commands.keys()].sort();
 			const events = registry.events.map(script => script.config.name);
 			return message.reply(
-				`Loaded commands (${commands.length}):\n${commands.join(", ")}\n\n` +
-				`Loaded events (${events.length}):\n${events.join(", ") || "—"}`
+				`📦 Loaded commands (${commands.length}):\n${commands.join(", ")}\n\n` +
+				`📦 Loaded events (${events.length}):\n${events.join(", ") || "—"}`
 			);
 		}
 
@@ -175,7 +175,7 @@ module.exports = {
 				}
 			}
 			return message.reply(
-				`Reloaded ${ok.length} script(s).\n` + (fail.length ? `Failed:\n${fail.join("\n")}` : "")
+				`✅ Reloaded ${ok.length} script(s).\n` + (fail.length ? `❌ Failed:\n${fail.join("\n")}` : "")
 			);
 		}
 
@@ -207,25 +207,25 @@ module.exports = {
 						source = "reply-attachment";
 					}
 					catch (error) {
-						return message.reply(`Could not download the file: ${String(error.message || error)}`);
+						return message.reply(`❌ Could not download the file: ${String(error.message || error)}`);
 					}
 				}
 			}
 			else if (urlArg) {
 				const url = normalizeUrl(urlArg);
-				if (!url) return message.reply("Give a valid http(s) URL.");
+				if (!url) return message.reply("❌ Give a valid http(s) URL.");
 				try {
 					code = await fetchText(url);
 					source = url;
 				}
 				catch (error) {
-					return message.reply(`Could not download the file: ${String(error.message || error)}`);
+					return message.reply(`❌ Could not download the file: ${String(error.message || error)}`);
 				}
 			}
 
 			if (!code) {
 				return message.reply(
-					"Nothing to install. Give a URL, reply to a message containing the code, " +
+					"⚠️ Nothing to install. Give a URL, reply to a message containing the code, " +
 					"or pass the code directly:\n" +
 					`${config.prefix}cmd install <url>\n` +
 					`${config.prefix}cmd install <name.js> <code>\n` +
@@ -235,7 +235,7 @@ module.exports = {
 
 			if (!fileName) fileName = "custom_" + Date.now().toString(36) + ".js";
 			if (!fileName.endsWith(".js")) fileName += ".js";
-			if (!/^[\w.-]+\.js$/.test(fileName)) return message.reply("Invalid file name.");
+			if (!/^[\w.-]+\.js$/.test(fileName)) return message.reply("❌ Invalid file name.");
 
 			const looksLikeEvent = /onEvent\s*[:(]/.test(code) && !/onStart/.test(code);
 			const isEvent = isEventFlag || looksLikeEvent;
@@ -243,19 +243,19 @@ module.exports = {
 
 			if (fs.existsSync(dest)) {
 				const sent = await message.reply(
-					`"${fileName}" already exists. React to this message to overwrite it.`
+					`⚠️ "${fileName}" already exists. React to this message to overwrite it.`
 				);
 				if (typeof setReactionHandler === "function" && sent && sent.messageID) {
 					setReactionHandler(async ({ event: reactionEvent, message: reactionMessage }) => {
 						if (String(reactionEvent.userID || reactionEvent.senderID) !== String(event.senderID)) return;
 						try {
 							const done = installFile(fileName, code, isEvent);
-							if (done.error) return reactionMessage.reply(done.error);
+							if (done.error) return reactionMessage.reply(`❌ ${done.error}`);
 							const loaded = loadInto(registry, done.file, isEvent);
-							await reactionMessage.reply(`Installed "${loaded.name}" from ${source || "code"} and reloaded it live.`);
+							await reactionMessage.reply(`✅ Installed "${loaded.name}" from ${source || "code"} and reloaded it live.`);
 						}
 						catch (error) {
-							await reactionMessage.reply(`Install failed: ${String(error.message || error)}`);
+							await reactionMessage.reply(`❌ Install failed: ${String(error.message || error)}`);
 						}
 					}, sent.messageID);
 				}
@@ -264,20 +264,25 @@ module.exports = {
 
 			try {
 				const done = installFile(fileName, code, isEvent);
-				if (done.error) return message.reply(done.error);
+				if (done.error) return message.reply(`❌ ${done.error}`);
 				const loaded = loadInto(registry, done.file, isEvent);
 				return message.reply(
-					`Installed "${loaded.name}" (${isEvent ? "event" : "command"}) from ${source || "code"} ` +
+					`✅ Installed "${loaded.name}" (${isEvent ? "event" : "command"}) from ${source || "code"} ` +
 					`to ${isEvent ? "events" : "commands"}/${fileName} and reloaded it live.`
 				);
 			}
 			catch (error) {
-				return message.reply(`Install failed: ${String(error.message || error)}`);
+				return message.reply(`❌ Install failed: ${String(error.message || error)}`);
 			}
 		}
 
+		const known = ["load", "reload", "unload", "remove", "uninstall", "delete"];
+		if (!known.includes(action)) {
+			return message.reply(`❌ Unknown action "${action}". Use load, loadall, unload, uninstall, reload, list, template or install.`);
+		}
+
 		const name = rest[0];
-		if (!name) return message.reply(`Usage: ${config.prefix}cmd ${action} <name>`);
+		if (!name) return message.reply(`⚠️ Usage: ${config.prefix}cmd ${action} <name>`);
 
 		const isEvent = isEventFlag || action.includes("event");
 		const file = resolveFile(name, isEvent);
@@ -285,21 +290,20 @@ module.exports = {
 		if (action === "unload" || action === "reload" || action === "load") {
 			if (!file) {
 				return message.reply(
-					`File not found for "${name}". ` +
-					`Looked in ${targetDir(isEvent)} and ${path.join(ROOT, isEvent ? "events" : "commands")}.`
+					`❌ File not found for "${name}" in ${path.relative(ROOT, targetDir(isEvent))}/.`
 				);
 			}
 			if (action === "unload") {
 				const removed = isEvent ? registry.unregisterEvent(name) : registry.unregisterCommand(name);
-				if (!removed) return message.reply(`No loaded ${isEvent ? "event" : "command"} named "${name}".`);
-				return message.reply(`Unloaded ${isEvent ? "event" : "command"} "${name}" live.`);
+				if (!removed) return message.reply(`❌ No loaded ${isEvent ? "event" : "command"} named "${name}".`);
+				return message.reply(`✅ Unloaded ${isEvent ? "event" : "command"} "${name}" live.`);
 			}
 			try {
 				const loaded = loadInto(registry, file, isEvent);
-				return message.reply(`Reloaded ${isEvent ? "event" : "command"} "${loaded.name}" live.`);
+				return message.reply(`✅ Reloaded ${isEvent ? "event" : "command"} "${loaded.name}" live.`);
 			}
 			catch (error) {
-				return message.reply(`Failed to load "${name}": ${String(error.message || error)}`);
+				return message.reply(`❌ Failed to load "${name}": ${String(error.message || error)}`);
 			}
 		}
 
@@ -317,13 +321,11 @@ module.exports = {
 				}
 				catch (_) { }
 			}
-			if (!removed && !deleted) return message.reply(`No loaded ${isEvent ? "event" : "command"} named "${name}".`);
+			if (!removed && !deleted) return message.reply(`❌ No loaded ${isEvent ? "event" : "command"} named "${name}".`);
 			return message.reply(
-				`${deleted ? "Uninstalled" : "Unloaded"} ${isEvent ? "event" : "command"} "${name}" live` +
+				`✅ ${deleted ? "Uninstalled" : "Unloaded"} ${isEvent ? "event" : "command"} "${name}" live` +
 				`${deleted ? ` and deleted ${path.relative(ROOT, located)}` : ""}.`
 			);
 		}
-
-		return message.reply(`Unknown action "${action}". Use load, loadall, unload, uninstall, reload, list, template or install.`);
 	}
 };
