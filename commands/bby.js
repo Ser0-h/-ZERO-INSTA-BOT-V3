@@ -1,13 +1,5 @@
 "use strict";
 
-/**
- * ============================================================
- *  bby.js — Instagram Direct non-prefix AI chatbot
- *  Author : Idle×Saow
- *  ZERO DEPENDENCY — Node 18+ built-in fetch
- * ============================================================
- */
-
 const DEBUG = true;
 
 const BASE_API_URL =
@@ -24,8 +16,6 @@ const BBY_ALIASES = [
     "babu",
     "zero"
 ];
-
-/* ============================================================ */
 
 function log(...args) {
     if (DEBUG) {
@@ -45,25 +35,19 @@ function timeoutSignal() {
     return controller.signal;
 }
 
-/* =========================== API ============================= */
-
 async function babyAPI(text, attachments = []) {
     const baseRes = await fetch(BASE_API_URL, {
         signal: timeoutSignal()
     });
 
     if (!baseRes.ok) {
-        throw new Error(
-            `Base API HTTP ${baseRes.status}`
-        );
+        throw new Error(`Base API HTTP ${baseRes.status}`);
     }
 
     const baseData = await baseRes.json();
 
     if (!baseData || !baseData.mahmud) {
-        throw new Error(
-            "Base API URL missing"
-        );
+        throw new Error("Base API URL missing");
     }
 
     const url =
@@ -73,22 +57,17 @@ async function babyAPI(text, attachments = []) {
 
     const res = await fetch(url, {
         method: "POST",
-
         headers: {
             "Content-Type": "application/json"
         },
-
         body: JSON.stringify({
             attachments
         }),
-
         signal: timeoutSignal()
     });
 
     if (!res.ok) {
-        throw new Error(
-            `BBY API HTTP ${res.status}`
-        );
+        throw new Error(`BBY API HTTP ${res.status}`);
     }
 
     const data = await res.json();
@@ -98,15 +77,11 @@ async function babyAPI(text, attachments = []) {
         typeof data.reply !== "string" ||
         !data.reply.trim()
     ) {
-        throw new Error(
-            "BBY API returned empty reply"
-        );
+        throw new Error("BBY API returned empty reply");
     }
 
     return data.reply;
 }
-
-/* ========================= HELPERS =========================== */
 
 function getUserID(event) {
     return String(
@@ -124,6 +99,10 @@ function getMessageID(result) {
         return result;
     }
 
+    if (Array.isArray(result)) {
+        return getMessageID(result[0]);
+    }
+
     return (
         result.messageID ??
         result.messageId ??
@@ -135,8 +114,6 @@ function getMessageID(result) {
         null
     );
 }
-
-/* ======================= SEND REPLY ========================== */
 
 async function sendReply(message, text) {
     try {
@@ -155,8 +132,7 @@ async function sendReply(message, text) {
             result,
             messageID
         };
-    }
-    catch (error) {
+    } catch (error) {
         log(
             "SEND ERROR:",
             error.message
@@ -168,8 +144,6 @@ async function sendReply(message, text) {
         };
     }
 }
-
-/* ====================== CONVERSATION ========================= */
 
 async function createConversation({
     message,
@@ -189,8 +163,7 @@ async function createConversation({
             "=>",
             reply
         );
-    }
-    catch (error) {
+    } catch (error) {
         log(
             "API ERROR:",
             error.message
@@ -212,30 +185,14 @@ async function createConversation({
         return;
     }
 
-    /*
-     * VERY IMPORTANT
-     *
-     * Dispatcher-এর onReply Map-এ
-     * এই bot message ID save হচ্ছে।
-     *
-     * User এই message-এ reply করলে
-     * handler আবার চলবে।
-     */
-
     setReplyHandler(
         async ({
             message: nextMessage,
             event: nextEvent,
             setReplyHandler: nextSetReplyHandler
         }) => {
-
             const nextUserID =
                 getUserID(nextEvent);
-
-            /*
-             * শুধু যে user conversation শুরু করেছে
-             * সেই user-এর reply গ্রহণ করবে।
-             */
 
             if (
                 userID &&
@@ -263,11 +220,6 @@ async function createConversation({
                 nextText
             );
 
-            /*
-             * নতুন reply → নতুন bot message →
-             * নতুন handler।
-             */
-
             return createConversation({
                 message: nextMessage,
                 event: nextEvent,
@@ -276,7 +228,6 @@ async function createConversation({
                 userID
             });
         },
-
         sent.messageID
     );
 
@@ -286,8 +237,6 @@ async function createConversation({
     );
 }
 
-/* =========================== START ============================ */
-
 async function onStart({
     message,
     event,
@@ -295,27 +244,11 @@ async function onStart({
     args,
     setReplyHandler
 }) {
-    /*
-     * Dispatcher command name বাদ দেয়।
-     *
-     * তাই:
-     *
-     * Zero
-     * args = []
-     * invokedAs = "zero"
-     *
-     * এই জন্য invokedAs ব্যবহার করছি।
-     */
-
     let text = "";
 
     if (Array.isArray(args) && args.length) {
         text = args.join(" ").trim();
     }
-
-    /*
-     * শুধু alias লিখলে alias-টাই API text হবে।
-     */
 
     if (!text && invokedAs) {
         text = String(invokedAs).trim();
@@ -325,19 +258,11 @@ async function onStart({
         return;
     }
 
-    /*
-     * Safety:
-     * bby.js নিজে থেকে অন্য কোনো normal text
-     * trigger করবে না।
-     */
-
     const alias = String(
         invokedAs || ""
     ).toLowerCase();
 
-    if (
-        !BBY_ALIASES.includes(alias)
-    ) {
+    if (!BBY_ALIASES.includes(alias)) {
         return;
     }
 
@@ -360,34 +285,23 @@ async function onStart({
     });
 }
 
-/* ========================== EXPORT ============================ */
-
 module.exports = {
     config: {
         name: "bby",
-
         author: "Idle×Saow",
-
         version: "1.3.0",
-
         description:
             "Non-prefix BBY AI chatbot with continuous reply conversation",
-
         category: "none",
-
         noPrefix: true,
-
         nonPrefix: true,
-
         noPrefixRole: 0,
-
         aliases: [
             "bby",
             "jan",
             "babu",
             "zero"
         ],
-
         cooldown: 3
     },
 
