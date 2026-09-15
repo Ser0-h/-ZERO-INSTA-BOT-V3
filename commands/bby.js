@@ -4,21 +4,12 @@
  * ============================================================
  *  bby.js — Instagram Direct non-prefix AI chatbot command
  *  Author : Idle×Saow
- * ------------------------------------------------------------
- *  DEFENSIVE BUILD:
- *  - Works with both loader styles: onChat({ api, event }) and
- *    onChat(api, event)
- *  - Handles common event field-name variations
- *  - Exposes every common hook name as alias
- *  - Uses the repo's baby API (mahmud) with timeout + fallback
- *  - Set DEBUG = false after everything works
+ *  ZERO DEPENDENCY — Node 18+ built-in fetch
  * ============================================================
  */
 
-const axios = require("axios");
-
 /* ============================ CONFIG ============================ */
-const DEBUG = true; // false kore dao jokhon kaj shuru korbe
+const DEBUG = true; // kaj shuru hole false kore dao
 
 const BASE_API_URL =
     "https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json";
@@ -29,10 +20,6 @@ const BBY_TRIGGER = "bby";
 const SESSION_TTL_MS = 30 * 60 * 1000;
 /* ================================================================= */
 
-/**
- * sessions : Map<messageId, { senderId, threadId, createdAt }>
- *   Only direct replies to these bot-sent messages re-trigger bby.
- */
 const sessions = new Map();
 
 function log(...args) {
@@ -50,10 +37,13 @@ function sweepExpired() {
     }
 }
 
+function makeTimeoutSignal() {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), BBY_TIMEOUT_MS).unref?.();
+    return controller.signal;
+}
+
 /* ------------------- Loader argument adapter ----------------- */
-/* Handles BOTH styles automatically:
-     onChat({ api, event })   -> args[0].api / args[0].event
-     onChat(api, event)       -> args[0] / args[1]                */
 
 function normalizeArgs(args) {
     const a = args[0];
@@ -106,7 +96,6 @@ function getText(event) {
     const body =
         event.body ??
         event.text ??
-        event.message ??
         event.content ??
         event.message?.text ??
         event.message?.body ??
@@ -121,26 +110,36 @@ function getReplyTargetId(event) {
         event.replyTo ??
         event.repliedTo ??
         event.reply_to ??
-        event.messageReply?.messageID ??
         null;
     if (!reply) return null;
     return getMessageId(reply);
 }
 
-/* ------------------------- BBY API --------------------------- */
+/* ------------------------- BBY API (fetch) -------------------- */
 
 async function babyAPI(text, attachments = []) {
-    const { data } = await axios.get(BASE_API_URL, {
-        timeout: BBY_TIMEOUT_MS,
+    const baseRes = await fetch(BASE_API_URL, {
+        signal: makeTimeoutSignal(),
     });
+    if (!baseRes.ok) throw new Error(`base URL HTTP ${baseRes.status}`);
+    const baseData = await baseRes.json();
 
-    const response = await axios.post(
-        `${data.mahmud}/api/baby?text=${encodeURIComponent(text)}&font=3`,
-        { attachments },
-        { timeout: BBY_TIMEOUT_MS }
+    const res = await fetch(
+        `${baseData.mahmud}/api/baby?text=${encodeURIComponent(text)}&font=3`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ attachments }),
+            signal: makeTimeoutSignal(),
+        }
     );
+    if (!res.ok) throw new Error(`baby API HTTP ${res.status}`);
 
-    return response.data.reply;
+    const data = await res.json();
+    if (!data || typeof data.reply !== "string" || !data.reply) {
+        throw new Error("baby API returned empty reply");
+    }
+    return data.reply;
 }
 
 /* ---------------------- Reply delivery ------------------------ */
@@ -157,7 +156,7 @@ async function deliver(api, event, userText) {
 
     try {
         if (!api || typeof api.sendMessage !== "function") {
-            log("ERROR: api.sendMessage not found on the api object");
+            log("ERROR: api.sendMessage not found");
             return;
         }
         const threadId = getThreadId(event);
@@ -173,14 +172,10 @@ async function deliver(api, event, userText) {
             : getMessageId(sent);
 
         if (sentId) {
-            sessions.set(String(sentId), {
-                senderId,
-                threadId,
-                createdAt: now(),
-            });
-            log("sent, stored message id:", sentId);
+            sessions.set(String(sentId), { senderId, threadId, createdAt: now() });
+            log("sent, stored id:", sentId);
         } else {
-            log("WARN: sendMessage succeeded but returned no message id");
+            log("WARN: sendMessage returned no message id");
         }
     } catch (err) {
         log("SEND ERROR:", err.message);
@@ -202,7 +197,6 @@ async function onChat() {
 
     log("msg:", text, "| replyTarget:", replyTargetId);
 
-    // Case B: direct reply to a message sent by bby (no "bby" word needed)
     if (replyTargetId && sessions.has(String(replyTargetId))) {
         const ctx = sessions.get(String(replyTargetId));
         sessions.delete(String(replyTargetId));
@@ -211,7 +205,6 @@ async function onChat() {
         return deliver(api, event, text);
     }
 
-    // Case A: message contains/starts with the trigger word
     if (text.toLowerCase().includes(BBY_TRIGGER)) {
         log("trigger word matched");
         return deliver(api, event, text);
@@ -247,7 +240,7 @@ module.exports = {
     config: {
         name: "bby",
         author: "Idle×Saow",
-        version: "1.0.3",
+        version: "1.0.5",
         description: "Non-prefix bby AI chatbot for Instagram Direct",
         category: "ai",
         nonPrefix: true,
@@ -255,11 +248,11 @@ module.exports = {
         cooldown: 3,
     },
 
-    // Primary hooks
     onChat,
     onReply,
 
-    // Aliases — one of these WILL match your loader
+    // Aliases — includes onMessage for your loader
+    onMessage: onChat,
     handleEvent: onChat,
     handleReply: onReply,
     onStart: onChat,
