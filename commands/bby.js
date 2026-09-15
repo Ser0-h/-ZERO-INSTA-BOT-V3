@@ -13,7 +13,9 @@ const DEBUG = true; // kaj shuru hole false kore dao
 
 const BASE_API_URL =
     "https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json";
+
 const BBY_TIMEOUT_MS = 20000;
+
 const BBY_FALLBACK_MESSAGE =
     "bby is a little busy right now. try again in a bit 🥺";
 
@@ -232,22 +234,57 @@ async function deliver(api, event, userText) {
 
         const senderId = getSenderId(event);
 
-        const sent = await api.sendMessage(
-            output,
-            threadId
-        );
+        /*
+         * IMPORTANT:
+         *
+         * First bot reply will be attached to the user's
+         * original message.
+         *
+         * api.sendMessage(
+         *   payload,
+         *   threadID,
+         *   callback,
+         *   replyTarget
+         * )
+         */
+
+        const originalMessageId = getMessageId(event);
+
+        const sent = await new Promise((resolve, reject) => {
+            api.sendMessage(
+                {
+                    body: output
+                },
+                threadId,
+                (error, result) => {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
+
+                    resolve(result);
+                },
+                originalMessageId
+            );
+        });
 
         const sentId = Array.isArray(sent)
             ? getMessageId(sent[0])
             : getMessageId(sent);
 
         /*
-         * Bot je message ta pathalo,
-         * oi message ID diye alada session store hobe.
+         * Bot-er nijer message ID session-e store hobe.
          *
-         * Tai ekoi somoy onekjon bby/jan/babu/zero
-         * likhleo prottekta bot reply alada kore track hobe.
+         * User bot-er reply-e text dile:
+         *
+         * User -> Bot message-e reply
+         *       -> oi bot message ID pawa jabe
+         *       -> session match hobe
+         *       -> abar bot reply korbe
+         *
+         * Tai prottek bot message-er alada chain thakbe.
          */
+
         if (sentId) {
             sessions.set(String(sentId), {
                 senderId,
@@ -255,7 +292,12 @@ async function deliver(api, event, userText) {
                 createdAt: now()
             });
 
-            log("sent, stored id:", sentId);
+            log(
+                "sent reply to:",
+                originalMessageId,
+                "| stored bot id:",
+                sentId
+            );
         } else {
             log("WARN: sendMessage returned no message id");
         }
@@ -287,13 +329,12 @@ async function onChat() {
 
     /*
      * ==========================================================
-     * 1. Existing bot reply-chain
+     * 1. Reply to bot's previous message
      * ==========================================================
      *
-     * Bot je message-er reply dise,
-     * user oi message-e reply korlei abar bot reply korbe.
+     * Ekhane bby/jan/babu/zero lagbe na.
      *
-     * Ekhane ar bby/jan/babu/zero lekhar proyojon nai.
+     * Bot-er message-e reply korlei bot abar reply korbe.
      */
 
     if (
@@ -304,10 +345,15 @@ async function onChat() {
 
         sessions.delete(String(replyTargetId));
 
+        /*
+         * Je user-er jonno session create hoisilo,
+         * sudhu sei user-er reply accept korbe.
+         */
+
         if (
             senderId &&
             ctx.senderId &&
-            senderId !== ctx.senderId
+            String(senderId) !== String(ctx.senderId)
         ) {
             return;
         }
@@ -323,22 +369,30 @@ async function onChat() {
 
     /*
      * ==========================================================
-     * 2. BBY aliases
+     * 2. Exact BBY aliases
      * ==========================================================
      *
-     * Sudhu exact:
+     * Only:
+     *
      * bby
      * jan
      * babu
      * zero
      *
-     * Egula likhle bot reply korbe.
+     * egulai initial event.
      *
-     * "hello bby"
-     * "bby kothay"
-     * "jan hello"
+     * Example:
      *
-     * Egula trigger korbe na.
+     * bby          -> trigger
+     * jan          -> trigger
+     * babu         -> trigger
+     * zero         -> trigger
+     *
+     * But:
+     *
+     * hello bby    -> NOT trigger
+     * bby hello    -> NOT trigger
+     * amar bby     -> NOT trigger
      */
 
     if (isBBYAlias(text)) {
@@ -387,7 +441,7 @@ async function onReply() {
     if (
         senderId &&
         ctx.senderId &&
-        senderId !== ctx.senderId
+        String(senderId) !== String(ctx.senderId)
     ) {
         return;
     }
@@ -407,9 +461,10 @@ module.exports = {
     config: {
         name: "bby",
         author: "Idle×Saow",
-        version: "1.0.6",
+        version: "1.0.7",
         description:
             "Non-prefix bby AI chatbot for Instagram Direct",
+
         category: "none",
 
         nonPrefix: true,
