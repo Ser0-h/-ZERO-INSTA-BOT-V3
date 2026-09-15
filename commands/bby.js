@@ -1,196 +1,212 @@
 "use strict";
 
-/**
- * bby.js — chat command (teach/remove/list/edit/msg + AI reply)
- * Adapted to match onMessage's config/handler style.
- * Author: MahMUD
- */
-
 const axios = require("axios");
 
-const triggerWords = [
-	"baby", "bby", "babu", "bbu", "jan",
-	"bot", "জান", "জানু", "বেবি", "wifey", "hina", "hinata"
-];
+/**
+ * ============================================================
+ *  bby.js — Instagram Direct non-prefix AI chatbot command
+ *  Author : Idle×Saow
+ * ------------------------------------------------------------
+ *  Uses the repository's baby API (mahmud) exactly like the
+ *  existing helper, with added timeout handling + fallback so
+ *  the bot never crashes when the API is down.
+ * ============================================================
+ */
 
-const getBaseApiUrl = async () => {
-	const base = await axios.get("https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json");
-	return base.data.mahmud;
-};
+/* ============================ CONFIG ============================ */
+const BASE_API_URL =
+    "https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json";
+const BBY_TIMEOUT_MS = 20000;
+const BBY_FALLBACK_MESSAGE =
+    "bby is a little busy right now. try again in a bit 🥺";
+const BBY_TRIGGER = "bby";
+const SESSION_TTL_MS = 30 * 60 * 1000; // reply-chain window
+/* ================================================================= */
+
+/**
+ * sessions : Map<messageId, { senderId, threadId, createdAt }>
+ *   messageId = ID of a reply previously sent by THIS command.
+ *   Only direct replies to these IDs re-trigger bby without "bby".
+ */
+const sessions = new Map();
+
+function now() {
+    return Date.now();
+}
+
+function sweepExpired() {
+    const t = now();
+    for (const [id, ctx] of sessions) {
+        if (t - ctx.createdAt > SESSION_TTL_MS) sessions.delete(id);
+    }
+}
+
+function getMessageId(message) {
+    if (!message) return null;
+    if (typeof message === "string") return message;
+    return (
+        message.messageID ??
+        message.message_id ??
+        message.item_id ??
+        message.id ??
+        null
+    );
+}
+
+function getSenderId(event) {
+    return (
+        event.senderID ??
+        event.senderId ??
+        event.userID ??
+        event.user_id ??
+        null
+    );
+}
+
+function getThreadId(event) {
+    return (
+        event.threadID ??
+        event.threadId ??
+        event.thread_id ??
+        null
+    );
+}
+
+function getText(event) {
+    const body =
+        event.body ??
+        event.text ??
+        event.message?.text ??
+        event.message?.body ??
+        "";
+    return typeof body === "string" ? body.trim() : "";
+}
+
+function getReplyTargetId(event) {
+    const reply =
+        event.messageReply ??
+        event.replyTo ??
+        event.repliedTo ??
+        null;
+    if (!reply) return null;
+    return getMessageId(reply);
+}
+
+/* ------------------------- BBY API ------------------------- */
+/* Same pattern as the repo's babyAPI helper, with timeouts. */
+
+async function babyAPI(text, attachments = []) {
+    const { data } = await axios.get(BASE_API_URL, {
+        timeout: BBY_TIMEOUT_MS,
+    });
+
+    const response = await axios.post(
+        `${data.mahmud}/api/baby?text=${encodeURIComponent(text)}&font=3`,
+        { attachments },
+        { timeout: BBY_TIMEOUT_MS }
+    );
+
+    return response.data.reply;
+}
+
+/* ---------------------- Reply delivery ---------------------- */
+
+async function deliver(api, event, userText) {
+    let output;
+    try {
+        output = await babyAPI(userText);
+    } catch (err) {
+        // API down / timeout / bad response -> clean fallback, no crash
+        output = BBY_FALLBACK_MESSAGE;
+    }
+
+    try {
+        const threadId = getThreadId(event);
+        if (!threadId) return;
+
+        const senderId = getSenderId(event);
+        const sent = await api.sendMessage(output, threadId);
+        const sentId = Array.isArray(sent)
+            ? getMessageId(sent[0])
+            : getMessageId(sent);
+
+        if (sentId) {
+            sessions.set(String(sentId), {
+                senderId,
+                threadId,
+                createdAt: now(),
+            });
+        }
+    } catch (err) {
+        // A failed send must never take the whole bot down
+    }
+}
+
+/* ------------------------- Hooks ---------------------------- */
+
+async function onChat({ api, event }) {
+    sweepExpired();
+
+    const text = getText(event);
+    if (!text) return;
+
+    const senderId = getSenderId(event);
+    const replyTargetId = getReplyTargetId(event);
+
+    // Case B: direct reply to a message sent by bby (no "bby" word needed)
+    if (replyTargetId && sessions.has(String(replyTargetId))) {
+        const ctx = sessions.get(String(replyTargetId));
+        sessions.delete(String(replyTargetId)); // one-shot: chain renews each turn
+        if (senderId && ctx.senderId && senderId !== ctx.senderId) return;
+        return deliver(api, event, text);
+    }
+
+    // Case A: message contains/starts with the trigger word
+    if (text.toLowerCase().includes(BBY_TRIGGER)) {
+        return deliver(api, event, text);
+    }
+
+    // Normal message -> stay silent
+}
+
+async function onReply({ api, event }) {
+    sweepExpired();
+
+    const replyTargetId = getReplyTargetId(event);
+    if (!replyTargetId || !sessions.has(String(replyTargetId))) return;
+
+    const text = getText(event);
+    if (!text) return;
+
+    const ctx = sessions.get(String(replyTargetId));
+    sessions.delete(String(replyTargetId));
+
+    const senderId = getSenderId(event);
+    if (senderId && ctx.senderId && senderId !== ctx.senderId) return;
+
+    return deliver(api, event, text);
+}
+
+/* ------------------------- Exports -------------------------- */
 
 module.exports = {
-	config: {
-		name: "bby",
-		aliases: ["baby", "bbu", "jan", "janu", "wifey", "bot", "hinata", "hina"],
-		category: "chat",
-		version: "4.7",
-		author: "MahMUD",
-		description: "better than all sim simi and most fastest",
-		eventType: ["message", "message_reply"]
-	},
+    config: {
+        name: "bby",
+        author: "Idle×Saow",
+        version: "1.0.2",
+        description: "Non-prefix bby AI chatbot for Instagram Direct",
+        category: "ai",
+        nonPrefix: true,
+        noPrefix: true,
+        cooldown: 3,
+    },
 
-	onEvent: async function ({ api, event, args, usersData }) {
-		const uid = event.senderID;
-		const rawMsg = Array.isArray(args) ? args.join(" ") : (event.body || "");
-		const msg = rawMsg.toLowerCase();
+    onChat,
+    onReply,
 
-		try {
-			// --- message_reply: continue conversation on a replied message ---
-			if (event.type === "message_reply") {
-				const text = event.body?.toLowerCase() || "";
-				const attachments = event.attachments || [];
-				const response = (await axios.post(
-					`${await getBaseApiUrl()}/api/baby?text=${encodeURIComponent(text)}&font=3`,
-					{ attachments }
-				)).data.reply;
-
-				return api.sendMessage(response, event.threadID, event.messageID);
-			}
-
-			// --- plain "message" event: only act if it starts with a trigger word ---
-			const body = (event.body || "").toLowerCase();
-			const hasTrigger = triggerWords.some(word => body.startsWith(word));
-			if (!hasTrigger) return;
-
-			const text = body.replace(/^\S+\s*/, "");
-			const attachments = event.attachments || [];
-
-			// subcommands (teach / remove / list / edit / msg)
-			const firstWord = text.split(" ")[0];
-
-			if (firstWord === "teach") {
-				const payload = text.replace(/^teach\s+/i, "");
-				const [trigger, ...responsesArr] = payload.split(" - ");
-				const responses = responsesArr.join(" - ");
-				if (!trigger || !responses)
-					return api.sendMessage("❌ | teach [question] - [response1, response2,...]", event.threadID, event.messageID);
-				const response = await axios.post(`${await getBaseApiUrl()}/api/teach`, { trigger, responses, userID: uid });
-				const userName = (await usersData.getName(parseInt(uid, 10))) || "Unknown User";
-				return api.sendMessage(
-					`✅ Replies added: "${responses}" to "${trigger}"\n• 𝐓𝐞𝐚𝐜𝐡𝐞𝐫: ${userName}\n• 𝐓𝐨𝐭𝐚𝐥: ${response.data.count || 0}`,
-					event.threadID, event.messageID
-				);
-			}
-
-			if (firstWord === "remove" || firstWord === "rm") {
-				const payload = text.replace(/^(remove|rm)\s+/i, "");
-				const [trigger, index] = payload.split(" - ");
-				if (!trigger || !index || isNaN(index))
-					return api.sendMessage("❌ | remove [question] - [index]", event.threadID, event.messageID);
-				const response = await axios.delete(`${await getBaseApiUrl()}/api/teach/remove`, {
-					data: { trigger, index: parseInt(index, 10) }
-				});
-				return api.sendMessage(response.data.message, event.threadID, event.messageID);
-			}
-
-			if (firstWord === "list") {
-				const parts = text.split(" ");
-				const isAll = parts[1] === "all" || !isNaN(parts[1]);
-				const endpoint = isAll ? "/list/all" : "/list";
-				const response = await axios.get(`${await getBaseApiUrl()}/api/teach${endpoint}`);
-				if (!isAll) return api.sendMessage(response.data.message, event.threadID, event.messageID);
-
-				let page = parseInt(!isNaN(parts[1]) ? parts[1] : parts[2], 10) || 1;
-				const limit = 100;
-				const rawData = response.data.data;
-				const teachers = [];
-				for (const userID of Object.keys(rawData)) {
-					let name = "Unknown";
-					try {
-						name = (await usersData.getName(parseInt(userID, 10))) || "Unknown";
-					} catch (e) {
-						console.error(`getName failed for userID ${userID}:`, e.message);
-					}
-					teachers.push({ name, value: rawData[userID] });
-				}
-				teachers.sort((a, b) => b.value - a.value);
-				const totalPages = Math.ceil(teachers.length / limit) || 1;
-				if (page < 1) page = 1;
-				if (page > totalPages) page = totalPages;
-				const start = (page - 1) * limit;
-				const paginatedData = teachers.slice(start, start + limit);
-
-				let message = "👑 List of Baby teachers:\n\n";
-				for (let i = 0; i < paginatedData.length; i++) {
-					const t = paginatedData[i];
-					const num = String(start + i + 1).padEnd(3);
-					message += `${num}. ${t.name}: ${t.value}\n`;
-				}
-				message += `\n• Total page: [${page}/${totalPages}]`;
-				message += `\n• Total Teacher: ${teachers.length}`;
-				message += `\n• type !bby list all ${page < totalPages ? page + 1 : page} and see next page`;
-				return api.sendMessage(message, event.threadID, event.messageID);
-			}
-
-			if (firstWord === "edit") {
-				const payload = text.replace(/^edit\s+/i, "");
-				const [oldTrigger, ...newArr] = payload.split(" - ");
-				const newResponse = newArr.join(" - ");
-				if (!oldTrigger || !newResponse)
-					return api.sendMessage("❌ | Format: edit [question] - [newResponse]", event.threadID, event.messageID);
-				await axios.put(`${await getBaseApiUrl()}/api/teach/edit`, { oldTrigger, newResponse });
-				return api.sendMessage(`✅ Edited "${oldTrigger}" to "${newResponse}"`, event.threadID, event.messageID);
-			}
-
-			if (firstWord === "message" || firstWord === "msg") {
-				const searchTrigger = text.split(" ").slice(1).join(" ");
-				if (!searchTrigger)
-					return api.sendMessage("Please provide a message to search.", event.threadID, event.messageID);
-				try {
-					const response = await axios.get(`${await getBaseApiUrl()}/api/teach/msg`, {
-						params: { userMessage: `msg ${searchTrigger}` }
-					});
-					return api.sendMessage(response.data.message || "No message found.", event.threadID, event.messageID);
-				} catch (error) {
-					const errorMessage = error.response?.data?.error || error.message || "error";
-					return api.sendMessage(errorMessage, event.threadID, event.messageID);
-				}
-			}
-
-			// --- no subcommand / no extra text: random flirty reply ---
-			const randomMessage = [
-				"আমাকে ডাকলে ,আমি কিন্তূ কিস করে দেবো😘 ",
-				"neo amr boss k message daw 01836298139",
-				"গোলাপ ফুল এর জায়গায় আমি দিলাম তোমায় মেসেজ",
-				"বলো কি বলবা, সবার সামনে বলবা নাকি?🤭🤏",
-				"𝗜 𝗹𝗼𝘃𝗲 𝘆𝗼𝘂__😘😘",
-				"𝗕𝗯𝘆 𝗕𝗯𝘆 না করে আমার বস মানে, MahMUD ,MahMUD ও তো করতে পারো😑?",
-				"আমার সোনার বাংলা, তারপরে লাইন কি? 🙈",
-				"🍺 এই নাও জুস খাও..!𝗕𝗯𝘆 বলতে বলতে হাপায় গেছো না 🥲",
-				"হটাৎ আমাকে মনে পড়লো 🙄",
-				"𝗕𝗯𝘆 বলে অসম্মান করচ্ছিছ,😰😿",
-				"𝗔𝘀𝘀𝗮𝗹𝗮𝗺𝘂𝗹𝗮𝗶𝗸𝘂𝗺 🐤🐤",
-				"আমি তোমার সিনিয়র আপু ওকে 😼সম্মান দেও🙁",
-				"খাওয়া দাওয়া করসো 🙄",
-				"এত কাছেও এসো না,প্রেম এ পরে যাবো তো 🙈",
-				"আরে আমি মজা করার mood এ নাই😒",
-				"𝗛𝗲𝘆 𝗛𝗮𝗻𝗱𝘀𝗼𝗺𝗲 বলো 😁😁",
-				"আরে Bolo আমার জান, কেমন আসো? 😚",
-				"একটা BF খুঁজে দাও 😿",
-				"oi mama ar dakis na pilis 😿",
-				"amr JaNu lagbe,Tumi ki single aso?",
-				"আমাকে না দেকে একটু পড়তেও বসতে তো পারো 🥺🥺",
-				"তোর বিয়ে হয় নি 𝗕𝗯𝘆 হইলো কিভাবে,,🙄",
-				"আজ একটা ফোন নাই বলে রিপ্লাই দিতে পারলাম না_🙄",
-				"চৌধুরী সাহেব আমি গরিব হতে পারি😾🤭 -কিন্তু বড়লোক না🥹 😫",
-				"আমি অন্যের জিনিসের সাথে কথা বলি না__😏ওকে"
-			];
-
-			if (!text && attachments.length === 0) {
-				const babyMessage = randomMessage[Math.floor(Math.random() * randomMessage.length)];
-				return api.sendMessage(babyMessage, event.threadID, event.messageID);
-			}
-
-			const response = (await axios.post(
-				`${await getBaseApiUrl()}/api/baby?text=${encodeURIComponent(text)}&font=3`,
-				{ attachments }
-			)).data.reply;
-
-			return api.sendMessage(response, event.threadID, event.messageID);
-
-		} catch (err) {
-			console.error(err);
-			api.sendMessage(`${err.response?.data || err.message}`, event.threadID, event.messageID);
-		}
-	}
+    // Aliases for loaders that use different hook names
+    handleEvent: onChat,
+    handleReply: onReply,
+    onStart: onChat,
+    run: onChat,
 };
