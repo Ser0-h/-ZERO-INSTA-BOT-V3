@@ -7,7 +7,7 @@
 
 module.exports = {
 	// dispatcher
-	commandNotFound: "Command not found! Try {pn}help",
+	commandNotFound: "Cmmand not found! Try {pn}help",
 	commandNotFoundSuggestion: "Command not found! Did you mean {pn}%1 or try {pn}help",
 	onlyAdmin: "Only group admins can use: %1",
 	onlyAdminBot: "Only bot admins can use: %1",
