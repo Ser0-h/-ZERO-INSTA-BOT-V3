@@ -1,35 +1,39 @@
-"use strict";
-
-const { resolveUserTarget, resolveProfile, isRateLimitError } = require("../src/utils");
-
 module.exports = {
-	config: {
-		name: "pfp",
-		aliases: ["pp", "profilepic", "avatarof"],
-		author: "Neoaz 🐊",
-		category: "info",
-		cooldown: 3,
-		role: 0,
-		description: { en: "Send a user's profile picture" },
-		usage: { en: "{p}pfp [userID | @handle | username | profile URL] — or reply to a message" }
-	},
+  config: {
+    name: "pfp",
+    aliases: ["profilepic"],
+    version: "1.0",
+    author: "Mahi",
+    countDown: 5,
+    role: 0,
+    description: { en: "Get profile picture of a user" },
+    category: "media",
+    guide: { en: "{pn} | {pn} <userId> | {pn} @mention | {pn} (reply)" }
+  },
 
-	onStart: async function ({ message, args, event, api }) {
-		const target = await resolveUserTarget(args, event, api);
-		if (!target.id) {
-			if (target.rateLimited) return message.reply("Instagram is rate-limiting lookups right now. Please try again in a few minutes.");
-			if (target.username) return message.reply(`Could not find @${target.username}.`);
-			return message.reply("Provide a numeric user id or @mention, or reply to a user's message.");
-		}
+  langs: {
+    en: {
+      failed: "❌ Failed: %1",
+      noPfp: "❌ No profile picture found."
+    }
+  },
 
-		const profile = await resolveProfile(args, event, api);
-		const picture = profile && profile.profilePicture;
-		if (!picture) {
-			if (profile && profile.rateLimited) return message.reply("Instagram is rate-limiting lookups right now. Please try again in a few minutes.");
-			return message.reply(`Could not find a profile picture for ${target.id}.`);
-		}
+  onStart: async function ({ api, event, args, message, getLang }) {
+    let targetId = null;
 
-		const name = (profile && (profile.name || profile.username)) || target.id;
-		await message.reply({ attachment: picture, body: `🖼️ ${name} (${target.id})`, textFirst: true });
-	}
-};
+    if (args[0]) {
+      targetId = args[0].replace(/[^0-9]/g, "");
+    }
+
+    if (!targetId && event.mentions && event.mentions.length) {
+      targetId = String(event.mentions[0]);
+    }
+
+    if (!targetId && event.raw?.text_entities?.mentioned_user_ids?.length) {
+      targetId = String(event.raw.text_entities.mentioned_user_ids[0]);
+    }
+
+    if (!targetId && event.messageReply) {
+      targetId = String(
+        event.messageReply.user_id ||
+        event.messageReply.senderID ||
