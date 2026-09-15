@@ -1,252 +1,262 @@
 "use strict";
 
 /**
- * Native InstaBOT port of dipto's Goat-Bot-V2 baby command.
+ * ============================================================
+ *  bby.js — Instagram Direct non-prefix AI chatbot command
+ *  Author : Idle×Saow
+ *  ZERO DEPENDENCY — Node 18+ built-in fetch
+ * ============================================================
  */
 
-const API_BASE = "https://noobs-api.top/dipto";
-const API_PATH = "/baby";
+/* ============================ CONFIG ============================ */
+const DEBUG = true; // kaj shuru hole false kore dao
 
-async function request(params = {}) {
-	const url = new URL(`${API_BASE}${API_PATH}`);
+const BASE_API_URL =
+    "https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json";
+const BBY_TIMEOUT_MS = 20000;
+const BBY_FALLBACK_MESSAGE =
+    "bby is a little busy right now. try again in a bit 🥺";
+const BBY_TRIGGER = "bby";
+const SESSION_TTL_MS = 30 * 60 * 1000;
+/* ================================================================= */
 
-	for (const [key, value] of Object.entries(params)) {
-		if (value != null && String(value) !== "") {
-			url.searchParams.set(key, String(value));
-		}
-	}
+const sessions = new Map();
 
-	const response = await fetch(url, {
-		headers: {
-			Accept: "application/json",
-			"User-Agent": "InstaBOT"
-		}
-	});
-
-	let data = {};
-
-	try {
-		data = await response.json();
-	} catch (_) {}
-
-	if (!response.ok) {
-		const detail =
-			data && (data.error || data.message)
-				? `: ${data.error || data.message}`
-				: "";
-
-		throw new Error(
-			`baby API returned HTTP ${response.status}${detail}`
-		);
-	}
-
-	return data || {};
+function log(...args) {
+    if (DEBUG) console.log("[bby]", ...args);
 }
 
-function textOf(
-	data,
-	fallback = "The baby API returned no reply."
-) {
-	const value =
-		data &&
-		(
-			data.reply != null
-				? data.reply
-				: data.message != null
-					? data.message
-					: data.data
-		);
-
-	return value == null ? fallback : String(value);
+function now() {
+    return Date.now();
 }
 
-async function answer(event, value) {
-	const data = await request({
-		text: String(value).toLowerCase(),
-		senderID: event.senderID,
-		font: 1
-	});
-
-	return textOf(data);
+function sweepExpired() {
+    const t = now();
+    for (const [id, ctx] of sessions) {
+        if (t - ctx.createdAt > SESSION_TTL_MS) sessions.delete(id);
+    }
 }
 
-/*
- * GoatBot-style continuous reply system
- */
-function armReply(setReplyHandler, sent) {
-	if (
-		typeof setReplyHandler !== "function" ||
-		!sent ||
-		!sent.messageID
-	) {
-		return;
-	}
-
-	setReplyHandler(
-		async ({
-			api,
-			message,
-			event,
-			setReplyHandler: nextSetReplyHandler
-		}) => {
-			if (
-				event.type &&
-				event.type !== "message_reply"
-			) {
-				return;
-			}
-
-			try {
-				// Ignore bot's own messages
-				const selfID =
-					api &&
-					typeof api.getCurrentUserID === "function"
-						? api.getCurrentUserID()
-						: null;
-
-				if (
-					selfID &&
-					String(selfID) === String(event.senderID)
-				) {
-					return;
-				}
-
-				const body =
-					typeof event.body === "string"
-						? event.body.trim()
-						: "";
-
-				if (!body) {
-					return message.reply(
-						"Say something to bby."
-					);
-				}
-
-				/*
-				 * User replied to previous BBY message
-				 */
-				const reply = await answer(
-					event,
-					body
-				);
-
-				/*
-				 * Send new BBY message
-				 */
-				const next = await message.reply(reply);
-
-				/*
-				 * IMPORTANT:
-				 * Attach listener to NEW bot message.
-				 */
-				armReply(
-					nextSetReplyHandler ||
-						setReplyHandler,
-					next
-				);
-
-				return next;
-			} catch (error) {
-				return message.reply(
-					`Error: ${
-						error.message || error
-					}`
-				);
-			}
-		},
-		sent.messageID
-	);
+function makeTimeoutSignal() {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), BBY_TIMEOUT_MS).unref?.();
+    return controller.signal;
 }
 
-/*
- * Send message + immediately listen for reply
- */
-async function replyAndArm(
-	message,
-	text,
-	setReplyHandler
-) {
-	const sent = await message.reply(text);
+/* ------------------- Loader argument adapter ----------------- */
 
-	armReply(
-		setReplyHandler,
-		sent
-	);
-
-	return sent;
+function normalizeArgs(args) {
+    const a = args[0];
+    if (a && typeof a === "object" && (a.api !== undefined || a.event !== undefined)) {
+        return { api: a.api, event: a.event };
+    }
+    return { api: args[0], event: args[1] };
 }
+
+/* ------------------- Event field extractors ------------------ */
+
+function getMessageId(message) {
+    if (!message) return null;
+    if (typeof message === "string") return message;
+    return (
+        message.messageID ??
+        message.message_id ??
+        message.item_id ??
+        message.id ??
+        null
+    );
+}
+
+function getSenderId(event) {
+    if (!event) return null;
+    return (
+        event.senderID ??
+        event.senderId ??
+        event.userID ??
+        event.user_id ??
+        event.author?.id ??
+        null
+    );
+}
+
+function getThreadId(event) {
+    if (!event) return null;
+    return (
+        event.threadID ??
+        event.threadId ??
+        event.thread_id ??
+        event.chatId ??
+        event.chat?.id ??
+        null
+    );
+}
+
+function getText(event) {
+    if (!event) return "";
+    const body =
+        event.body ??
+        event.text ??
+        event.content ??
+        event.message?.text ??
+        event.message?.body ??
+        "";
+    return typeof body === "string" ? body.trim() : "";
+}
+
+function getReplyTargetId(event) {
+    if (!event) return null;
+    const reply =
+        event.messageReply ??
+        event.replyTo ??
+        event.repliedTo ??
+        event.reply_to ??
+        null;
+    if (!reply) return null;
+    return getMessageId(reply);
+}
+
+/* ------------------------- BBY API (fetch) -------------------- */
+
+async function babyAPI(text, attachments = []) {
+    const baseRes = await fetch(BASE_API_URL, {
+        signal: makeTimeoutSignal(),
+    });
+    if (!baseRes.ok) throw new Error(`base URL HTTP ${baseRes.status}`);
+    const baseData = await baseRes.json();
+
+    const res = await fetch(
+        `${baseData.mahmud}/api/baby?text=${encodeURIComponent(text)}&font=3`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ attachments }),
+            signal: makeTimeoutSignal(),
+        }
+    );
+    if (!res.ok) throw new Error(`baby API HTTP ${res.status}`);
+
+    const data = await res.json();
+    if (!data || typeof data.reply !== "string" || !data.reply) {
+        throw new Error("baby API returned empty reply");
+    }
+    return data.reply;
+}
+
+/* ---------------------- Reply delivery ------------------------ */
+
+async function deliver(api, event, userText) {
+    let output;
+    try {
+        output = await babyAPI(userText);
+        log("API reply:", output);
+    } catch (err) {
+        log("API ERROR:", err.message);
+        output = BBY_FALLBACK_MESSAGE;
+    }
+
+    try {
+        if (!api || typeof api.sendMessage !== "function") {
+            log("ERROR: api.sendMessage not found");
+            return;
+        }
+        const threadId = getThreadId(event);
+        if (!threadId) {
+            log("ERROR: thread id not found in event");
+            return;
+        }
+
+        const senderId = getSenderId(event);
+        const sent = await api.sendMessage(output, threadId);
+        const sentId = Array.isArray(sent)
+            ? getMessageId(sent[0])
+            : getMessageId(sent);
+
+        if (sentId) {
+            sessions.set(String(sentId), { senderId, threadId, createdAt: now() });
+            log("sent, stored id:", sentId);
+        } else {
+            log("WARN: sendMessage returned no message id");
+        }
+    } catch (err) {
+        log("SEND ERROR:", err.message);
+    }
+}
+
+/* --------------------------- Hooks ---------------------------- */
+
+async function onChat() {
+    const { api, event } = normalizeArgs(arguments);
+
+    sweepExpired();
+
+    const text = getText(event);
+    if (!text) return;
+
+    const senderId = getSenderId(event);
+    const replyTargetId = getReplyTargetId(event);
+
+    log("msg:", text, "| replyTarget:", replyTargetId);
+
+    if (replyTargetId && sessions.has(String(replyTargetId))) {
+        const ctx = sessions.get(String(replyTargetId));
+        sessions.delete(String(replyTargetId));
+        if (senderId && ctx.senderId && senderId !== ctx.senderId) return;
+        log("reply-chain triggered");
+        return deliver(api, event, text);
+    }
+
+    if (text.toLowerCase().includes(BBY_TRIGGER)) {
+        log("trigger word matched");
+        return deliver(api, event, text);
+    }
+
+    log("ignored (normal message)");
+}
+
+async function onReply() {
+    const { api, event } = normalizeArgs(arguments);
+
+    sweepExpired();
+
+    const replyTargetId = getReplyTargetId(event);
+    if (!replyTargetId || !sessions.has(String(replyTargetId))) return;
+
+    const text = getText(event);
+    if (!text) return;
+
+    const ctx = sessions.get(String(replyTargetId));
+    sessions.delete(String(replyTargetId));
+
+    const senderId = getSenderId(event);
+    if (senderId && ctx.senderId && senderId !== ctx.senderId) return;
+
+    log("onReply triggered");
+    return deliver(api, event, text);
+}
+
+/* --------------------------- Exports -------------------------- */
 
 module.exports = {
-	config: {
-		name: "bby",
+    config: {
+        name: "bby",
+        author: "Idle×Saow",
+        version: "1.0.5",
+        description: "Non-prefix bby AI chatbot for Instagram Direct",
+        category: "ai",
+        nonPrefix: true,
+        noPrefix: true,
+        cooldown: 3,
+    },
 
-		aliases: [
-			"baby",
-			"bbe",
-			"babe",
-			"sam"
-		],
+    onChat,
+    onReply,
 
-		author: "Idle×Saow",
-
-		version: "2.0.0",
-
-		cooldown: 0,
-
-		role: 0,
-
-		noPrefix: true,
-
-		noPrefixRole: 0,
-
-		category: "chat",
-
-		description: {
-			en: "Chat with baby"
-		},
-
-		usage: {
-			en: "{p}bby <message>"
-		}
-	},
-
-	onStart: async function ({
-		message,
-		args,
-		event,
-		setReplyHandler
-	}) {
-		try {
-			/*
-			 * Just "Bby"
-			 */
-			if (!args.length) {
-				return replyAndArm(
-					message,
-					"Bolo baby",
-					setReplyHandler
-				);
-			}
-
-			/*
-			 * "Bby hello"
-			 */
-			const reply = await answer(
-				event,
-				args.join(" ")
-			);
-
-			return replyAndArm(
-				message,
-				reply,
-				setReplyHandler
-			);
-		} catch (error) {
-			return message.reply(
-				`Error: ${
-					error.message || error
-				}`
-			);
-		}
-	}
+    // Aliases — includes onMessage for your loader
+    onMessage: onChat,
+    handleEvent: onChat,
+    handleReply: onReply,
+    onStart: onChat,
+    run: onChat,
+    execute: onChat,
+    start: onChat,
 };
