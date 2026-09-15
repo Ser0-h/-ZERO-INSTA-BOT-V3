@@ -8,8 +8,6 @@
  * ============================================================
  */
 
-/* ============================ CONFIG ============================ */
-
 const DEBUG = true;
 
 const BASE_API_URL =
@@ -27,7 +25,7 @@ const BBY_ALIASES = [
     "zero"
 ];
 
-/* ================================================================= */
+/* ============================================================ */
 
 function log(...args) {
     if (DEBUG) {
@@ -35,7 +33,7 @@ function log(...args) {
     }
 }
 
-function makeTimeoutSignal() {
+function timeoutSignal() {
     const controller = new AbortController();
 
     const timer = setTimeout(() => {
@@ -47,53 +45,49 @@ function makeTimeoutSignal() {
     return controller.signal;
 }
 
-/* ------------------------- BBY API ---------------------------- */
+/* =========================== API ============================= */
 
 async function babyAPI(text, attachments = []) {
-    const baseRes = await fetch(
-        BASE_API_URL,
-        {
-            signal: makeTimeoutSignal()
-        }
-    );
+    const baseRes = await fetch(BASE_API_URL, {
+        signal: timeoutSignal()
+    });
 
     if (!baseRes.ok) {
         throw new Error(
-            `base URL HTTP ${baseRes.status}`
+            `Base API HTTP ${baseRes.status}`
         );
     }
 
     const baseData = await baseRes.json();
 
-    if (
-        !baseData ||
-        !baseData.mahmud
-    ) {
+    if (!baseData || !baseData.mahmud) {
         throw new Error(
-            "BBY API base URL not found"
+            "Base API URL missing"
         );
     }
 
-    const res = await fetch(
-        `${baseData.mahmud}/api/baby?text=${encodeURIComponent(text)}&font=3`,
-        {
-            method: "POST",
+    const url =
+        `${baseData.mahmud}/api/baby` +
+        `?text=${encodeURIComponent(text)}` +
+        `&font=3`;
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+    const res = await fetch(url, {
+        method: "POST",
 
-            body: JSON.stringify({
-                attachments
-            }),
+        headers: {
+            "Content-Type": "application/json"
+        },
 
-            signal: makeTimeoutSignal()
-        }
-    );
+        body: JSON.stringify({
+            attachments
+        }),
+
+        signal: timeoutSignal()
+    });
 
     if (!res.ok) {
         throw new Error(
-            `baby API HTTP ${res.status}`
+            `BBY API HTTP ${res.status}`
         );
     }
 
@@ -105,20 +99,20 @@ async function babyAPI(text, attachments = []) {
         !data.reply.trim()
     ) {
         throw new Error(
-            "baby API returned empty reply"
+            "BBY API returned empty reply"
         );
     }
 
     return data.reply;
 }
 
-/* ------------------------- Helpers ---------------------------- */
+/* ========================= HELPERS =========================== */
 
-function getSenderID(event) {
+function getUserID(event) {
     return String(
         event?.senderID ??
-        event?.userID ??
         event?.senderId ??
+        event?.userID ??
         ""
     );
 }
@@ -138,18 +132,13 @@ function getMessageID(result) {
         result.itemId ??
         result.id ??
         result.mid ??
-        result.result?.messageID ??
-        result.result?.messageId ??
-        result.result?.message_id ??
-        result.result?.item_id ??
-        result.result?.id ??
         null
     );
 }
 
-/* ---------------------- Send BBY Reply ------------------------ */
+/* ======================= SEND REPLY ========================== */
 
-async function sendBBY(message, text) {
+async function sendReply(message, text) {
     try {
         const result = await message.reply({
             body: text
@@ -158,8 +147,8 @@ async function sendBBY(message, text) {
         const messageID = getMessageID(result);
 
         log(
-            "BOT REPLY SENT:",
-            messageID || "NO_MESSAGE_ID"
+            "BOT MESSAGE:",
+            messageID || "NO ID"
         );
 
         return {
@@ -180,51 +169,25 @@ async function sendBBY(message, text) {
     }
 }
 
-/* ---------------------- Conversation ------------------------- */
+/* ====================== CONVERSATION ========================= */
 
-/**
- * Send AI response and arm the next reply handler.
- *
- * This is the important part:
- *
- * User
- *   ↓
- * bby
- *   ↓
- * Bot reply #1
- *   ↓
- * setReplyHandler(#1)
- *
- * User replies to #1
- *   ↓
- * Bot reply #2
- *   ↓
- * setReplyHandler(#2)
- *
- * User replies to #2
- *   ↓
- * Bot reply #3
- *   ↓
- * setReplyHandler(#3)
- *
- * ...continues
- */
-
-async function answer({
+async function createConversation({
     message,
     event,
     text,
     setReplyHandler,
-    ownerID
+    userID
 }) {
-    let output;
+    let reply;
 
     try {
-        output = await babyAPI(text);
+        reply = await babyAPI(text);
 
         log(
-            "API REPLY:",
-            output
+            "API:",
+            text,
+            "=>",
+            reply
         );
     }
     catch (error) {
@@ -233,52 +196,62 @@ async function answer({
             error.message
         );
 
-        output = BBY_FALLBACK_MESSAGE;
+        reply = BBY_FALLBACK_MESSAGE;
     }
 
-    const sent = await sendBBY(
+    const sent = await sendReply(
         message,
-        output
+        reply
     );
 
     if (!sent.messageID) {
         log(
-            "Cannot arm reply handler: message ID missing"
+            "Cannot continue conversation: no message ID"
         );
 
         return;
     }
 
     /*
-     * Only the same person who started the conversation
-     * can continue this conversation.
+     * VERY IMPORTANT
+     *
+     * Dispatcher-এর onReply Map-এ
+     * এই bot message ID save হচ্ছে।
+     *
+     * User এই message-এ reply করলে
+     * handler আবার চলবে।
      */
 
     setReplyHandler(
         async ({
-            message: replyMessage,
-            event: replyEvent,
-            setReplyHandler: nextReplyHandler
+            message: nextMessage,
+            event: nextEvent,
+            setReplyHandler: nextSetReplyHandler
         }) => {
-            const currentSenderID =
-                getSenderID(replyEvent);
+
+            const nextUserID =
+                getUserID(nextEvent);
+
+            /*
+             * শুধু যে user conversation শুরু করেছে
+             * সেই user-এর reply গ্রহণ করবে।
+             */
 
             if (
-                ownerID &&
-                currentSenderID &&
-                String(currentSenderID) !==
-                String(ownerID)
+                userID &&
+                nextUserID &&
+                String(userID) !== String(nextUserID)
             ) {
                 log(
-                    "IGNORED: different user"
+                    "Ignored reply from another user"
                 );
 
                 return;
             }
 
             const nextText =
-                typeof replyEvent.body === "string"
-                    ? replyEvent.body.trim()
+                typeof nextEvent.body === "string"
+                    ? nextEvent.body.trim()
                     : "";
 
             if (!nextText) {
@@ -286,23 +259,21 @@ async function answer({
             }
 
             log(
-                "CONVERSATION CONTINUE:",
+                "CONTINUE:",
                 nextText
             );
 
             /*
-             * IMPORTANT:
-             *
-             * This creates the next Bot message and then
-             * arms another handler for that NEW message.
+             * নতুন reply → নতুন bot message →
+             * নতুন handler।
              */
 
-            return answer({
-                message: replyMessage,
-                event: replyEvent,
+            return createConversation({
+                message: nextMessage,
+                event: nextEvent,
                 text: nextText,
-                setReplyHandler: nextReplyHandler,
-                ownerID
+                setReplyHandler: nextSetReplyHandler,
+                userID
             });
         },
 
@@ -310,48 +281,86 @@ async function answer({
     );
 
     log(
-        "REPLY HANDLER ARMED:",
+        "HANDLER ARMED:",
         sent.messageID
     );
 }
 
-/* --------------------------- Command -------------------------- */
+/* =========================== START ============================ */
 
 async function onStart({
     message,
     event,
+    invokedAs,
     args,
     setReplyHandler
 }) {
-    const text =
-        Array.isArray(args)
-            ? args.join(" ").trim()
-            : "";
+    /*
+     * Dispatcher command name বাদ দেয়।
+     *
+     * তাই:
+     *
+     * Zero
+     * args = []
+     * invokedAs = "zero"
+     *
+     * এই জন্য invokedAs ব্যবহার করছি।
+     */
+
+    let text = "";
+
+    if (Array.isArray(args) && args.length) {
+        text = args.join(" ").trim();
+    }
+
+    /*
+     * শুধু alias লিখলে alias-টাই API text হবে।
+     */
+
+    if (!text && invokedAs) {
+        text = String(invokedAs).trim();
+    }
 
     if (!text) {
         return;
     }
 
-    const ownerID =
-        getSenderID(event);
+    /*
+     * Safety:
+     * bby.js নিজে থেকে অন্য কোনো normal text
+     * trigger করবে না।
+     */
+
+    const alias = String(
+        invokedAs || ""
+    ).toLowerCase();
+
+    if (
+        !BBY_ALIASES.includes(alias)
+    ) {
+        return;
+    }
+
+    const userID =
+        getUserID(event);
 
     log(
-        "INITIAL:",
-        text,
+        "START:",
+        alias,
         "| USER:",
-        ownerID
+        userID
     );
 
-    return answer({
+    return createConversation({
         message,
         event,
         text,
         setReplyHandler,
-        ownerID
+        userID
     });
 }
 
-/* --------------------------- Exports -------------------------- */
+/* ========================== EXPORT ============================ */
 
 module.exports = {
     config: {
@@ -359,7 +368,7 @@ module.exports = {
 
         author: "Idle×Saow",
 
-        version: "1.2.0",
+        version: "1.3.0",
 
         description:
             "Non-prefix BBY AI chatbot with continuous reply conversation",
@@ -369,13 +378,6 @@ module.exports = {
         noPrefix: true,
 
         nonPrefix: true,
-
-        /*
-         * Dispatcher checks noPrefixRole.
-         * ROLE_USER = 0
-         *
-         * Therefore everyone can use these aliases.
-         */
 
         noPrefixRole: 0,
 
