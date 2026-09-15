@@ -839,6 +839,47 @@ async function main() {
 			assert.ok(requested && requested.includes("noobs-api.top/dipto/baby"), "expected the baby API to be called");
 			assert.ok(registry.resolve("bby"), "bby must be registered");
 			assert.strictEqual(registry.resolve("bby").config.noPrefix, true, "bby must run without the prefix");
+			assert.strictEqual(registry.resolve("bby").config.author, "dipto", "bby must credit dipto");
+		}
+		finally { global.fetch = originalFetch; }
+	});
+
+	await test("bby: replies use the baby endpoint and re-arm the next reply", async () => {
+		const bby = require(path.join(root, "commands", "bby"));
+		const originalFetch = global.fetch;
+		const requested = [];
+		const sent = [];
+		let firstHandler = null;
+		let nextHandler = null;
+		global.fetch = async url => {
+			requested.push(String(url));
+			return { ok: true, json: async () => ({ reply: requested.length === 1 ? "first answer" : "second answer" }) };
+		};
+		const makeMessage = () => ({
+			reply: async body => {
+				sent.push(String(body));
+				return { messageID: "bby-message-" + sent.length };
+			}
+		});
+		try {
+			await bby.onStart({
+				message: makeMessage(),
+				args: ["hello"],
+				event: { type: "message", senderID: "42", threadID: "t", messageID: "m" },
+				usersData: makeDatabase().users,
+				setReplyHandler: handler => { firstHandler = handler; }
+			});
+			assert.strictEqual(sent[0], "first answer");
+			assert.ok(firstHandler, "the initial answer must arm a reply handler");
+			await firstHandler({
+				api: fakeApi(),
+				message: makeMessage(),
+				event: { type: "message_reply", senderID: "42", threadID: "t", messageID: "r", body: "again" },
+				setReplyHandler: handler => { nextHandler = handler; }
+			});
+			assert.strictEqual(sent[1], "second answer");
+			assert.ok(nextHandler, "each reply must arm the next response");
+			assert.ok(requested[1].includes("noobs-api.top/dipto/baby"), "reply must use the baby endpoint");
 		}
 		finally { global.fetch = originalFetch; }
 	});
