@@ -1,432 +1,305 @@
 "use strict";
 
-/**
- * ============================================================
- * bby.js — Instagram Direct non-prefix AI chatbot
- * Author : Idle×Saow
- *
- * Repo-compatible with:
- * lazyneoaz/Insta-Bot
- *
- * Uses native setReplyHandler() for reply-chain.
- * ============================================================
- */
-
-
-/* ============================ CONFIG ============================ */
-
-const DEBUG = true;
+const axios = require("axios");
 
 const BASE_API_URL =
-	"https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json";
+  "https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json";
 
-const BBY_TIMEOUT_MS = 20000;
+const API_TIMEOUT = 20000;
 
-const BBY_FALLBACK_MESSAGE =
-	"bby is a little busy right now. try again in a bit 🥺";
-
-const BBY_TRIGGER = "bby";
-
-
-/*
- * Reply handler-এর নিজের TTL dispatcher-এ 30 min।
- * তাই এখানে আলাদা session timer দরকার নেই।
- */
-
-
-/* ============================ DEBUG ============================ */
+const TRIGGERS = [
+  "bby",
+  "baby",
+  "babu",
+  "bbu",
+  "jan",
+  "bot",
+  "জান",
+  "জানু",
+  "বেবি",
+  "wifey",
+  "hina",
+  "hinata"
+];
 
 function log(...args) {
-	if (DEBUG) {
-		console.log("[bby]", ...args);
-	}
+  console.log("[BBY]", ...args);
 }
 
+/* =========================
+   GET BBY API URL
+========================= */
 
-/* ============================ TIMEOUT ============================ */
+async function getApiUrl() {
+  const { data } = await axios.get(BASE_API_URL, {
+    timeout: API_TIMEOUT
+  });
 
-function makeTimeoutSignal() {
-	const controller = new AbortController();
+  let base = data?.mahmud;
 
-	const timer = setTimeout(() => {
-		controller.abort();
-	}, BBY_TIMEOUT_MS);
+  if (Array.isArray(base)) {
+    base = base.find(Boolean);
+  }
 
-	timer.unref?.();
+  if (!base) {
+    throw new Error("BBY API URL not found");
+  }
 
-	return controller.signal;
+  return String(base).replace(/\/+$/, "");
 }
 
+/* =========================
+   BBY API
+========================= */
 
-/* ======================= MESSAGE ID ============================== */
+async function askBby(text, senderID) {
+  const base = await getApiUrl();
 
-function messageIDOf(sent) {
-	if (!sent) return null;
+  const url = `${base}/api/baby`;
 
-	if (typeof sent === "string") {
-		return sent;
-	}
+  log("Request:", text);
 
-	if (sent.messageID) {
-		return sent.messageID;
-	}
+  const { data } = await axios.get(url, {
+    params: {
+      text,
+      senderID,
+      font: 3
+    },
 
-	if (sent.messageId) {
-		return sent.messageId;
-	}
+    timeout: API_TIMEOUT
+  });
 
-	if (sent.id) {
-		return sent.id;
-	}
+  log("Response:", data);
 
-	if (sent.message?.messageID) {
-		return sent.message.messageID;
-	}
+  if (!data?.reply) {
+    throw new Error("BBY returned empty reply");
+  }
 
-	if (sent.message?.messageId) {
-		return sent.message.messageId;
-	}
-
-	if (Array.isArray(sent)) {
-		if (sent[0]) {
-			return (
-				sent[0].messageID ??
-				sent[0].messageId ??
-				sent[0].id ??
-				null
-			);
-		}
-	}
-
-	return null;
+  return String(data.reply).trim();
 }
 
+/* =========================
+   MESSAGE ID
+========================= */
 
-/* ========================== BBY API =============================== */
+function getMessageID(info) {
+  if (!info) return null;
 
-async function babyAPI(text, attachments = []) {
+  if (typeof info === "string") {
+    return info;
+  }
 
-	/* -------- Get base API -------- */
-
-	const baseRes = await fetch(
-		BASE_API_URL,
-		{
-			signal: makeTimeoutSignal()
-		}
-	);
-
-	if (!baseRes.ok) {
-		throw new Error(
-			`base URL HTTP ${baseRes.status}`
-		);
-	}
-
-	const baseData = await baseRes.json();
-
-	if (
-		!baseData ||
-		!baseData.mahmud
-	) {
-		throw new Error(
-			"Invalid base API response"
-		);
-	}
-
-
-	/* -------- BBY API -------- */
-
-	const url =
-		`${baseData.mahmud}/api/baby` +
-		`?text=${encodeURIComponent(text)}` +
-		`&font=3`;
-
-
-	const res = await fetch(
-		url,
-		{
-			method: "POST",
-
-			headers: {
-				"Content-Type": "application/json"
-			},
-
-			body: JSON.stringify({
-				attachments
-			}),
-
-			signal: makeTimeoutSignal()
-		}
-	);
-
-
-	if (!res.ok) {
-		throw new Error(
-			`baby API HTTP ${res.status}`
-		);
-	}
-
-
-	const data = await res.json();
-
-
-	if (
-		!data ||
-		typeof data.reply !== "string" ||
-		!data.reply.trim()
-	) {
-		throw new Error(
-			"baby API returned empty reply"
-		);
-	}
-
-
-	return data.reply.trim();
+  return (
+    info.messageID ||
+    info.messageId ||
+    info.id ||
+    info.message?.messageID ||
+    info.message?.messageId ||
+    (Array.isArray(info) ? getMessageID(info[0]) : null)
+  );
 }
 
+/* =========================
+   CONTINUOUS CHAT
+========================= */
 
-/* ======================= SEND + ARM REPLY ========================= */
-
-/*
- * এটা সবচেয়ে গুরুত্বপূর্ণ function।
- *
- * Bot message পাঠানোর পরে সেই message-এর ID নিয়ে
- * setReplyHandler() দিয়ে আবার নতুন handler arm করা হয়।
- *
- * ফলে:
- *
- * User -> Bby
- * Bot -> Reply #1
- *
- * User -> reply to #1
- * Bot -> Reply #2
- *
- * User -> reply to #2
- * Bot -> Reply #3
- *
- * এভাবেই চলতে থাকবে।
- */
-
-async function sendAndArm({
-	message,
-	userText,
-	setReplyHandler
+async function replyAndListen({
+  message,
+  text,
+  senderID,
+  setReplyHandler
 }) {
+  let answer;
 
-	let output;
+  try {
+    answer = await askBby(text, senderID);
+  } catch (error) {
+    log(
+      "API ERROR:",
+      error?.response?.data ||
+      error?.message ||
+      error
+    );
 
+    answer =
+      "❌ BBY API is currently unavailable.\n" +
+      "╰➤ Please try again later.";
+  }
 
-	/* ---------------- API ---------------- */
+  let sent;
 
-	try {
+  try {
+    sent = await message.reply(answer);
+  } catch (error) {
+    log("SEND ERROR:", error?.message || error);
+    return;
+  }
 
-		output = await babyAPI(
-			userText
-		);
+  const botMessageID = getMessageID(sent);
 
-		log(
-			"API reply:",
-			output
-		);
+  log("Bot message ID:", botMessageID);
 
-	} catch (error) {
+  /*
+   * GoatBot:
+   *
+   * global.GoatBot.onReply.set(botMessageID, ...)
+   *
+   * Instagram Bot:
+   *
+   * setReplyHandler(..., botMessageID)
+   */
 
-		log(
-			"API ERROR:",
-			error?.message || error
-		);
+  if (!botMessageID || typeof setReplyHandler !== "function") {
+    log("Could not attach reply listener.");
+    return sent;
+  }
 
-		output =
-			BBY_FALLBACK_MESSAGE;
-	}
+  setReplyHandler(
+    async ({
+      message: replyMessage,
+      event: replyEvent,
+      setReplyHandler: nextSetReplyHandler
+    }) => {
+      const userText =
+        typeof replyEvent?.body === "string"
+          ? replyEvent.body.trim()
+          : "";
 
+      if (!userText) return;
 
-	/* ---------------- SEND ---------------- */
+      log("Reply received:", userText);
 
-	let sent;
+      await replyAndListen({
+        message: replyMessage,
+        text: userText,
+        senderID: replyEvent?.senderID || senderID,
+        setReplyHandler: nextSetReplyHandler
+      });
+    },
 
-	try {
+    botMessageID
+  );
 
-		sent = await message.reply(
-			output
-		);
+  log("Listening for reply:", botMessageID);
 
-	} catch (error) {
-
-		log(
-			"SEND ERROR:",
-			error?.message || error
-		);
-
-		return;
-	}
-
-
-	/* ---------------- MESSAGE ID ---------------- */
-
-	const botMessageID =
-		messageIDOf(sent);
-
-
-	log(
-		"bot message ID:",
-		botMessageID
-	);
-
-
-	/*
-	 * Bot message ID পাওয়া গেলে
-	 * ওই message-এর reply-এর জন্য
-	 * নতুন handler register করব।
-	 */
-
-	if (
-		botMessageID &&
-		typeof setReplyHandler ===
-			"function"
-	) {
-
-		setReplyHandler(
-			async function ({
-				message: replyMessage,
-				event: replyEvent,
-				setReplyHandler: nextSetReplyHandler
-			}) {
-
-				const text =
-					typeof replyEvent.body ===
-					"string"
-						? replyEvent.body.trim()
-						: "";
-
-
-				if (!text) {
-					return;
-				}
-
-
-				log(
-					"conversation reply:",
-					text
-				);
-
-
-				/*
-				 * নতুন reply-এর উত্তর পাঠাও।
-				 *
-				 * এবং নতুন bot message-এর জন্য
-				 * আবার handler arm হবে।
-				 */
-
-				return sendAndArm({
-					message: replyMessage,
-
-					userText: text,
-
-					setReplyHandler:
-						nextSetReplyHandler
-				});
-			},
-
-			botMessageID
-		);
-
-
-		log(
-			"reply handler armed:",
-			botMessageID
-		);
-	}
-
-
-	return sent;
+  return sent;
 }
 
-
-/* ============================ START =============================== */
+/* =========================
+   COMMAND START
+========================= */
 
 async function onStart({
-	message,
-	args,
-	event,
-	setReplyHandler
+  message,
+  args,
+  event,
+  setReplyHandler
 }) {
+  const text = args.join(" ").trim();
 
-	const text =
-		args.join(" ").trim();
+  const senderID = event?.senderID;
 
+  /*
+   * Just:
+   *
+   * Bby
+   */
 
-	/*
-	 * Empty হলে কিছু করবে না।
-	 */
-	if (!text) {
-		return;
-	}
+  if (!text) {
+    let sent;
 
+    try {
+      sent = await message.reply(
+        "╭───〔 ☠️ BBY 〕───╮\n" +
+        "➥ Bby is listening... 🥺\n" +
+        "➥ Reply to this message.\n" +
+        "╰────────────────╯"
+      );
+    } catch (error) {
+      log("Initial send error:", error?.message || error);
+      return;
+    }
 
-	log(
-		"onStart:",
-		text,
-		"| sender:",
-		event?.senderID,
-		"| thread:",
-		event?.threadID
-	);
+    const botMessageID = getMessageID(sent);
 
+    if (!botMessageID) {
+      log("Initial message ID not found.");
+      return sent;
+    }
 
-	/*
-	 * এখানে প্রথম message-এর জন্য
-	 * API call হবে।
-	 *
-	 * এরপর sendAndArm() bot-এর reply ID ধরে
-	 * reply-chain শুরু করবে।
-	 */
+    setReplyHandler(
+      async ({
+        message: replyMessage,
+        event: replyEvent,
+        setReplyHandler: nextSetReplyHandler
+      }) => {
+        const userText =
+          typeof replyEvent?.body === "string"
+            ? replyEvent.body.trim()
+            : "";
 
-	return sendAndArm({
-		message,
+        if (!userText) return;
 
-		userText: text,
+        log("Initial reply:", userText);
 
-		setReplyHandler
-	});
+        await replyAndListen({
+          message: replyMessage,
+          text: userText,
+          senderID: replyEvent?.senderID || senderID,
+          setReplyHandler: nextSetReplyHandler
+        });
+      },
+
+      botMessageID
+    );
+
+    log(
+      "Initial listener attached:",
+      botMessageID
+    );
+
+    return sent;
+  }
+
+  /*
+   * Example:
+   *
+   * Bby kemon acho
+   */
+
+  return replyAndListen({
+    message,
+    text,
+    senderID,
+    setReplyHandler
+  });
 }
 
-
-/* ============================ EXPORT ============================== */
+/* =========================
+   EXPORT
+========================= */
 
 module.exports = {
+  config: {
+    name: "bby",
 
-	config: {
+    author: "Idle×Saow",
 
-		name: "bby",
+    version: "2.0.0",
 
-		author: "Idle×Saow",
+    description:
+      "BBY chatbot with continuous reply conversation",
 
-		version: "1.0.8",
+    category: "ai",
 
-		description:
-			"Non-prefix BBY AI chatbot with continuous reply conversation",
+    noPrefix: true,
 
-		category: "ai",
+    noPrefixRole: 0,
 
-		/*
-		 * Prefix ছাড়া "Bby ..." চালু।
-		 */
-		noPrefix: true,
+    role: 0,
 
-		/*
-		 * Normal users-কেও prefix ছাড়া
-		 * command ব্যবহার করতে দেবে।
-		 */
-		noPrefixRole: 0,
+    cooldown: 0
+  },
 
-		/*
-		 * User command.
-		 */
-		role: 0,
-
-		cooldown: 3
-	},
-
-
-	onStart
+  onStart
 };
