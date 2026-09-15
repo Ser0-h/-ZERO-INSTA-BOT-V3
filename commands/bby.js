@@ -9,7 +9,7 @@
  */
 
 /* ============================ CONFIG ============================ */
-const DEBUG = true; // kaj shuru hole false kore dao
+const DEBUG = true;
 
 const BASE_API_URL =
     "https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json";
@@ -90,6 +90,7 @@ function getMessageId(message) {
         message.messageID ??
         message.message_id ??
         message.item_id ??
+        message.itemId ??
         message.id ??
         null
     );
@@ -104,6 +105,7 @@ function getSenderId(event) {
         event.userID ??
         event.user_id ??
         event.author?.id ??
+        event.sender?.id ??
         null
     );
 }
@@ -143,6 +145,8 @@ function getReplyTargetId(event) {
         event.replyTo ??
         event.repliedTo ??
         event.reply_to ??
+        event.message?.replyTo ??
+        event.message?.reply_to ??
         null;
 
     if (!reply) return null;
@@ -155,12 +159,12 @@ function getReplyTargetId(event) {
 function isBBYAlias(text) {
     if (!text) return false;
 
-    const normalized = text.trim().toLowerCase();
-
-    return BBY_ALIASES.includes(normalized);
+    return BBY_ALIASES.includes(
+        text.trim().toLowerCase()
+    );
 }
 
-/* ------------------------- BBY API (fetch) -------------------- */
+/* ------------------------- BBY API ---------------------------- */
 
 async function babyAPI(text, attachments = []) {
     const baseRes = await fetch(BASE_API_URL, {
@@ -226,29 +230,22 @@ async function deliver(api, event, userText) {
         }
 
         const threadId = getThreadId(event);
+        const senderId = getSenderId(event);
+        const originalMessageId = getMessageId(event);
 
         if (!threadId) {
-            log("ERROR: thread id not found in event");
+            log("ERROR: thread id not found");
             return;
         }
 
-        const senderId = getSenderId(event);
+        if (!originalMessageId) {
+            log("ERROR: message id not found");
+            return;
+        }
 
         /*
-         * IMPORTANT:
-         *
-         * First bot reply will be attached to the user's
-         * original message.
-         *
-         * api.sendMessage(
-         *   payload,
-         *   threadID,
-         *   callback,
-         *   replyTarget
-         * )
+         * Bot always replies directly to the current user message.
          */
-
-        const originalMessageId = getMessageId(event);
 
         const sent = await new Promise((resolve, reject) => {
             api.sendMessage(
@@ -272,35 +269,39 @@ async function deliver(api, event, userText) {
             ? getMessageId(sent[0])
             : getMessageId(sent);
 
+        if (!sentId) {
+            log("WARN: bot message ID not returned");
+            return;
+        }
+
         /*
-         * Bot-er nijer message ID session-e store hobe.
+         * IMPORTANT:
          *
-         * User bot-er reply-e text dile:
+         * New bot message = new active conversation point.
          *
-         * User -> Bot message-e reply
-         *       -> oi bot message ID pawa jabe
-         *       -> session match hobe
-         *       -> abar bot reply korbe
-         *
-         * Tai prottek bot message-er alada chain thakbe.
+         * Old session delete korleo notun bot message-er ID
+         * immediately session-e store hobe.
          */
 
-        if (sentId) {
-            sessions.set(String(sentId), {
-                senderId,
-                threadId,
-                createdAt: now()
-            });
+        sessions.set(String(sentId), {
+            senderId: senderId != null
+                ? String(senderId)
+                : null,
 
-            log(
-                "sent reply to:",
-                originalMessageId,
-                "| stored bot id:",
-                sentId
-            );
-        } else {
-            log("WARN: sendMessage returned no message id");
-        }
+            threadId: String(threadId),
+
+            createdAt: now()
+        });
+
+        log(
+            "SESSION CREATED:",
+            String(sentId),
+            "| USER:",
+            senderId,
+            "| THREAD:",
+            threadId
+        );
+
     } catch (err) {
         log("SEND ERROR:", err.message);
     }
@@ -321,44 +322,55 @@ async function onChat() {
     const replyTargetId = getReplyTargetId(event);
 
     log(
-        "msg:",
+        "MSG:",
         text,
-        "| replyTarget:",
-        replyTargetId
+        "| REPLY:",
+        replyTargetId,
+        "| USER:",
+        senderId
     );
 
     /*
      * ==========================================================
-     * 1. Reply to bot's previous message
+     * REPLY CHAIN
      * ==========================================================
-     *
-     * Ekhane bby/jan/babu/zero lagbe na.
-     *
-     * Bot-er message-e reply korlei bot abar reply korbe.
      */
 
     if (
         replyTargetId &&
         sessions.has(String(replyTargetId))
     ) {
-        const ctx = sessions.get(String(replyTargetId));
-
-        sessions.delete(String(replyTargetId));
+        const ctx = sessions.get(
+            String(replyTargetId)
+        );
 
         /*
-         * Je user-er jonno session create hoisilo,
-         * sudhu sei user-er reply accept korbe.
+         * Session delete করার আগে user verify.
          */
 
         if (
-            senderId &&
-            ctx.senderId &&
+            senderId != null &&
+            ctx.senderId != null &&
             String(senderId) !== String(ctx.senderId)
         ) {
+            log("REPLY IGNORED: different user");
             return;
         }
 
-        log("reply-chain triggered");
+        /*
+         * Current session consume.
+         * deliver() নতুন bot message-এর ID দিয়ে
+         * নতুন session তৈরি করবে।
+         */
+
+        sessions.delete(
+            String(replyTargetId)
+        );
+
+        log(
+            "REPLY CHAIN MATCHED:",
+            replyTargetId
+        );
 
         return deliver(
             api,
@@ -369,34 +381,15 @@ async function onChat() {
 
     /*
      * ==========================================================
-     * 2. Exact BBY aliases
+     * INITIAL ALIAS EVENT
      * ==========================================================
-     *
-     * Only:
-     *
-     * bby
-     * jan
-     * babu
-     * zero
-     *
-     * egulai initial event.
-     *
-     * Example:
-     *
-     * bby          -> trigger
-     * jan          -> trigger
-     * babu         -> trigger
-     * zero         -> trigger
-     *
-     * But:
-     *
-     * hello bby    -> NOT trigger
-     * bby hello    -> NOT trigger
-     * amar bby     -> NOT trigger
      */
 
     if (isBBYAlias(text)) {
-        log("BBY alias matched:", text);
+        log(
+            "INITIAL ALIAS:",
+            text
+        );
 
         return deliver(
             api,
@@ -409,7 +402,7 @@ async function onChat() {
      * Normal message ignore.
      */
 
-    log("ignored (normal message)");
+    log("IGNORED");
 }
 
 /* --------------------------- Reply ---------------------------- */
@@ -421,32 +414,49 @@ async function onReply() {
 
     const replyTargetId = getReplyTargetId(event);
 
-    if (
-        !replyTargetId ||
-        !sessions.has(String(replyTargetId))
-    ) {
+    if (!replyTargetId) {
+        return;
+    }
+
+    const ctx = sessions.get(
+        String(replyTargetId)
+    );
+
+    if (!ctx) {
         return;
     }
 
     const text = getText(event);
 
-    if (!text) return;
-
-    const ctx = sessions.get(String(replyTargetId));
-
-    sessions.delete(String(replyTargetId));
+    if (!text) {
+        return;
+    }
 
     const senderId = getSenderId(event);
 
     if (
-        senderId &&
-        ctx.senderId &&
+        senderId != null &&
+        ctx.senderId != null &&
         String(senderId) !== String(ctx.senderId)
     ) {
+        log("ONREPLY IGNORED: different user");
         return;
     }
 
-    log("onReply triggered");
+    /*
+     * Consume old bot message session.
+     * deliver() নতুন bot message-এর জন্য
+     * নতুন session বানাবে।
+     */
+
+    sessions.delete(
+        String(replyTargetId)
+    );
+
+    log(
+        "ONREPLY MATCHED:",
+        replyTargetId
+    );
 
     return deliver(
         api,
@@ -461,7 +471,7 @@ module.exports = {
     config: {
         name: "bby",
         author: "Idle×Saow",
-        version: "1.0.7",
+        version: "1.0.8",
         description:
             "Non-prefix bby AI chatbot for Instagram Direct",
 
@@ -483,7 +493,6 @@ module.exports = {
     onChat,
     onReply,
 
-    // Aliases — includes onMessage for your loader
     onMessage: onChat,
     handleEvent: onChat,
     handleReply: onReply,
