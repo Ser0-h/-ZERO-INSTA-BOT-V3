@@ -2,359 +2,762 @@
 
 /**
  * ============================================================
- *  onMessage.js — Instagram DM message event (non-prefix bby)
+ *  bby.js — Instagram Direct non-prefix AI chatbot command
  *  Author : Idle×Saow
- * ------------------------------------------------------------
- *  - Quoted reply: tries 7 different send formats
- *  - Conversation continue: detects bot-message replies via
- *    stored ID OR bot-ownership flags (fromMe/isBot/sender)
- *  - Dumps full event JSON on reply (for one-time field check)
  *  ZERO DEPENDENCY — Node 18+ built-in fetch
  * ============================================================
  */
 
 /* ============================ CONFIG ============================ */
-const DEBUG = true; // final hole false kore dao
 
-const ALLOWED_UIDS = [
-    // "1111111111",
-];
+const DEBUG = true;
 
 const BASE_API_URL =
     "https://raw.githubusercontent.com/mahmud-aura/HINATA/main/baseApiUrl.json";
+
 const BBY_TIMEOUT_MS = 20000;
+
 const BBY_FALLBACK_MESSAGE =
     "bby is a little busy right now. try again in a bit 🥺";
+
 const BBY_TRIGGER = "bby";
+
+/*
+ * Conversation কতক্ষণ active থাকবে
+ * 30 minutes
+ */
 const SESSION_TTL_MS = 30 * 60 * 1000;
+
 /* ================================================================= */
 
+
+/*
+ * ============================================================
+ * SESSION SYSTEM
+ * ============================================================
+ *
+ * threadId অনুযায়ী conversation রাখা হবে।
+ *
+ * Example:
+ *
+ * User:
+ *   bby ki koro
+ *
+ * Bot:
+ *   bose asi...
+ *
+ * User:
+ *   [reply to bot] tumi ki eka?
+ *
+ * Bot:
+ *   ha...
+ *
+ * User:
+ *   [reply to bot] khaiso?
+ *
+ * Bot:
+ *   na...
+ *
+ * এভাবে chain চলবে।
+ *
+ * প্রতিবার নতুন bot reply আসার পর তার message ID
+ * আবার session-এর মধ্যে save হবে।
+ */
+
 const sessions = new Map();
-let replyDumped = false; // full event ekbar e dump hobe
+
+
+/* ============================ HELPERS ============================ */
 
 function log(...args) {
-    if (DEBUG) console.log("[bby]", ...args);
+    if (DEBUG) {
+        console.log("[bby]", ...args);
+    }
 }
 
 function now() {
     return Date.now();
 }
 
+
+/*
+ * Expired conversation remove
+ */
 function sweepExpired() {
-    const t = now();
-    for (const [id, ctx] of sessions) {
-        if (t - ctx.createdAt > SESSION_TTL_MS) sessions.delete(id);
+    const current = now();
+
+    for (const [threadId, session] of sessions) {
+        if (current - session.createdAt > SESSION_TTL_MS) {
+            log("session expired:", threadId);
+            sessions.delete(threadId);
+        }
     }
 }
 
+
+/*
+ * Timeout signal
+ */
 function makeTimeoutSignal() {
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), BBY_TIMEOUT_MS).unref?.();
+
+    const timer = setTimeout(() => {
+        controller.abort();
+    }, BBY_TIMEOUT_MS);
+
+    timer.unref?.();
+
     return controller.signal;
 }
 
-/* ------------------- Loader argument adapter ----------------- */
+
+/* ===================== LOADER ARGUMENT ADAPTER ==================== */
 
 function normalizeArgs(args) {
     const a = args[0];
-    if (a && typeof a === "object" && (a.api !== undefined || a.event !== undefined)) {
-        return { api: a.api, event: a.event };
+
+    if (
+        a &&
+        typeof a === "object" &&
+        (a.api !== undefined || a.event !== undefined)
+    ) {
+        return {
+            api: a.api,
+            event: a.event,
+        };
     }
-    // some loaders pass (api, event, ...) directly
-    if (args.length >= 2 && args[1] && typeof args[1] === "object") {
-        return { api: args[0], event: args[1] };
-    }
-    return { api: args[0], event: args[0] };
+
+    return {
+        api: args[0],
+        event: args[1],
+    };
 }
 
-/* ------------------- Event field extractors ------------------ */
 
+/* ===================== EVENT FIELD EXTRACTORS ==================== */
+
+
+/*
+ * Message ID বের করা
+ */
 function getMessageId(message) {
     if (!message) return null;
-    if (typeof message === "string") return message;
+
+    if (typeof message === "string") {
+        return message;
+    }
+
     return (
         message.messageID ??
-        message.message_id ??
         message.messageId ??
+        message.message_id ??
         message.item_id ??
-        message.mid ??
+        message.itemId ??
         message.id ??
+        message.mid ??
+        message.message?.messageID ??
+        message.message?.id ??
         null
     );
 }
 
+
+/*
+ * Sender ID
+ */
 function getSenderId(event) {
     if (!event) return null;
+
     return (
         event.senderID ??
         event.senderId ??
         event.userID ??
+        event.userId ??
         event.user_id ??
-        event.message?.user_id ??
-        event.message?.sender_id ??
         event.author?.id ??
-        event.message?.author?.id ??
+        event.sender?.id ??
+        event.from?.id ??
         null
     );
 }
 
+
+/*
+ * Thread / conversation ID
+ */
 function getThreadId(event) {
     if (!event) return null;
+
     return (
         event.threadID ??
         event.threadId ??
         event.thread_id ??
-        event.message?.thread_id ??
         event.chatId ??
+        event.chatID ??
         event.chat?.id ??
-        event.thread?.thread_id ??
+        event.thread?.id ??
         null
     );
 }
 
+
+/*
+ * Message text
+ */
 function getText(event) {
     if (!event) return "";
+
     const body =
         event.body ??
         event.text ??
         event.content ??
         event.message?.text ??
         event.message?.body ??
-        event.item?.text ??
+        event.message?.content ??
         "";
-    return typeof body === "string" ? body.trim() : "";
+
+    return typeof body === "string"
+        ? body.trim()
+        : "";
 }
 
-function getMyId(api) {
-    try {
-        if (api && typeof api.getCurrentUserID === "function") {
-            return api.getCurrentUserID();
-        }
-    } catch (err) { /* ignore */ }
-    return null;
+
+/*
+ * Reply object বের করা
+ */
+function getReplyObject(event) {
+    if (!event) return null;
+
+    return (
+        event.messageReply ??
+        event.replyTo ??
+        event.repliedTo ??
+        event.reply_to ??
+        event.reply ??
+        event.message?.replyTo ??
+        event.message?.messageReply ??
+        null
+    );
 }
 
-function normalizeReply(candidate) {
-    if (!candidate) return null;
-    if (typeof candidate === "string") return { id: candidate, raw: null };
-    const raw = candidate.item ?? candidate.message ?? candidate;
-    return { id: getMessageId(raw), raw };
-}
 
-function getReplyInfo(event) {
-    const candidates = [
-        event.messageReply,
-        event.replyTo,
-        event.repliedTo,
-        event.reply_to,
-        event.replyToMessage,
-        event.reply_to_message,
-        event.replied_to_item,
-        event.message?.replied_to_item,
-        event.message?.reply,
-        event.item?.replied_to_item,
-        event.message?.reply_to,
-    ];
-    for (const c of candidates) {
-        if (c) return normalizeReply(c);
-    }
-    return null;
-}
+/*
+ * Reply করা message-এর ID
+ */
+function getReplyTargetId(event) {
+    const reply = getReplyObject(event);
 
-function isBotMessage(replyRaw, api) {
-    if (!replyRaw || typeof replyRaw !== "object") return false;
-
-    if (
-        replyRaw.fromMe === true ||
-        replyRaw.isBot === true ||
-        replyRaw.isSelf === true ||
-        replyRaw.is_bot === true
-    ) {
-        return true;
+    if (!reply) {
+        return null;
     }
 
-    const replySender =
-        replyRaw.senderID ??
-        replyRaw.senderId ??
-        replyRaw.userID ??
-        replyRaw.user_id ??
-        replyRaw.author?.id ??
-        replyRaw.message?.user_id ??
-        null;
-
-    const me = getMyId(api);
-    if (replySender != null && me != null && String(replySender) === String(me)) {
-        return true;
-    }
-
-    return false;
+    return getMessageId(reply);
 }
 
-function isAllowed(senderId) {
-    if (!ALLOWED_UIDS.length) return true;
-    return senderId != null && ALLOWED_UIDS.includes(String(senderId));
-}
 
-/* ------------------------- BBY API (fetch) -------------------- */
+/* ============================ BBY API ============================ */
 
 async function babyAPI(text, attachments = []) {
+    /*
+     * Base API URL
+     */
     const baseRes = await fetch(BASE_API_URL, {
         signal: makeTimeoutSignal(),
     });
-    if (!baseRes.ok) throw new Error(`base URL HTTP ${baseRes.status}`);
+
+    if (!baseRes.ok) {
+        throw new Error(`base URL HTTP ${baseRes.status}`);
+    }
+
     const baseData = await baseRes.json();
 
-    const base = Array.isArray(baseData.mahmud)
-        ? baseData.mahmud[0]
-        : baseData.mahmud;
+    if (!baseData || !baseData.mahmud) {
+        throw new Error("base API URL missing");
+    }
 
+
+    /*
+     * BBY API
+     */
     const res = await fetch(
-        `${base}/api/baby?text=${encodeURIComponent(text)}&font=3`,
+        `${baseData.mahmud}/api/baby?text=${encodeURIComponent(text)}&font=3`,
         {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ attachments }),
+
+            headers: {
+                "Content-Type": "application/json",
+            },
+
+            body: JSON.stringify({
+                attachments,
+            }),
+
             signal: makeTimeoutSignal(),
         }
     );
-    if (!res.ok) throw new Error(`baby API HTTP ${res.status}`);
+
+
+    if (!res.ok) {
+        throw new Error(`baby API HTTP ${res.status}`);
+    }
+
 
     const data = await res.json();
-    if (!data || typeof data.reply !== "string" || !data.reply) {
+
+
+    if (
+        !data ||
+        typeof data.reply !== "string" ||
+        !data.reply.trim()
+    ) {
         throw new Error("baby API returned empty reply");
     }
+
+
     return data.reply;
 }
 
-/* ---------------------- Reply delivery ------------------------ */
 
-async function sendReply(api, threadId, text, replyToId) {
-    const attempts = [];
+/* ======================== SESSION FUNCTIONS ====================== */
 
-    if (typeof api.sendMessage === "function") {
-        attempts.push(
-            (t) => api.sendMessage(t, threadId, replyToId),
-            (t) => api.sendMessage(t, threadId, { replyToMessage: replyToId }),
-            (t) => api.sendMessage(t, threadId, { messageReply: replyToId }),
-            (t) => api.sendMessage(t, threadId, { replyTo: replyToId }),
-            (t) => api.sendMessage(t, threadId, { reply_to: replyToId })
-        );
-    }
 
-    // instagram-private-api realtime style
-    if (api.realtime && api.realtime.direct && typeof api.realtime.direct.sendText === "function") {
-        attempts.push(
-            (t) => api.realtime.direct.sendText({ text: t, threadId, replyToItemId: replyToId }),
-            (t) => api.realtime.direct.sendText({ text: t, thread: threadId, replyToItemId: replyToId })
-        );
-    }
+/*
+ * নতুন conversation শুরু
+ */
+function createSession(threadId, senderId) {
+    const session = {
+        threadId: String(threadId),
+        senderId: senderId ? String(senderId) : null,
 
-    if (replyToId && attempts.length) {
-        for (let i = 0; i < attempts.length; i++) {
-            try {
-                const sent = await attempts[i](text);
-                log("QUOTED REPLY OK with format #" + (i + 1) + " of " + attempts.length);
-                return sent;
-            } catch (err) {
-                log("reply format #" + (i + 1) + " failed:", err.message);
-            }
-        }
-        log("no quoted-reply format worked, sending plain");
-    }
+        /*
+         * Bot-এর সব recent message ID
+         * এইগুলোতে user reply করলে chain চলবে।
+         */
+        botMessageIds: new Set(),
 
-    return api.sendMessage(text, threadId);
+        createdAt: now(),
+        lastActivity: now(),
+    };
+
+    sessions.set(String(threadId), session);
+
+    log("conversation started:", threadId);
+
+    return session;
 }
 
-async function deliver(api, event, userText) {
-    const senderId = getSenderId(event);
-    const threadId = getThreadId(event);
-    const userMsgId = getMessageId(event);
 
+/*
+ * Existing session update
+ */
+function touchSession(session) {
+    if (!session) return;
+
+    session.lastActivity = now();
+    session.createdAt = now();
+}
+
+
+/*
+ * Bot-এর নতুন message ID session-এ রাখা
+ */
+function rememberBotMessage(session, messageId) {
+    if (!session || !messageId) return;
+
+    session.botMessageIds.add(String(messageId));
+
+    /*
+     * শুধু recent কয়েকটা ID রাখি
+     */
+    if (session.botMessageIds.size > 10) {
+        const first = session.botMessageIds.values().next().value;
+
+        if (first) {
+            session.botMessageIds.delete(first);
+        }
+    }
+
+    touchSession(session);
+
+    log(
+        "bot message stored:",
+        messageId,
+        "| total:",
+        session.botMessageIds.size
+    );
+}
+
+
+/*
+ * এই message ID কি BBY bot-এর message?
+ */
+function isBotMessage(session, messageId) {
+    if (!session || !messageId) {
+        return false;
+    }
+
+    return session.botMessageIds.has(String(messageId));
+}
+
+
+/*
+ * Reply chain-এর জন্য session খোঁজা
+ */
+function getReplySession(threadId, replyTargetId) {
+    if (!threadId || !replyTargetId) {
+        return null;
+    }
+
+    const session = sessions.get(String(threadId));
+
+    if (!session) {
+        return null;
+    }
+
+    if (isBotMessage(session, replyTargetId)) {
+        return session;
+    }
+
+    return null;
+}
+
+
+/* ========================= SEND MESSAGE ========================== */
+
+async function deliver(api, event, userText, session = null) {
     let output;
+
+    /*
+     * API call
+     */
     try {
         output = await babyAPI(userText);
+
         log("API reply:", output);
     } catch (err) {
-        log("API ERROR:", err.message);
+        log("API ERROR:", err?.message || err);
+
         output = BBY_FALLBACK_MESSAGE;
     }
 
+
+    /*
+     * sendMessage check
+     */
     try {
-        if (!api || typeof api.sendMessage !== "function") {
+        if (
+            !api ||
+            typeof api.sendMessage !== "function"
+        ) {
             log("ERROR: api.sendMessage not found");
             return;
         }
+
+
+        const threadId = getThreadId(event);
+
         if (!threadId) {
-            log("ERROR: thread id not found in event");
+            log("ERROR: thread id not found");
             return;
         }
 
-        const sent = await sendReply(api, threadId, output, userMsgId);
-        const sentId = Array.isArray(sent)
-            ? getMessageId(sent[0])
-            : getMessageId(sent?.payload?.message ?? sent);
+
+        const senderId = getSenderId(event);
+
+
+        /*
+         * Session না থাকলে নতুন session বানাবে।
+         *
+         * এটা প্রথম "bby" trigger-এর সময় হবে।
+         */
+        if (!session) {
+            session = createSession(
+                threadId,
+                senderId
+            );
+        }
+
+
+        /*
+         * Message পাঠানো
+         */
+        const sent = await api.sendMessage(
+            output,
+            threadId
+        );
+
+
+        /*
+         * Instagram framework বিভিন্ন format-এ
+         * sent message return করতে পারে।
+         */
+        const sentId = getMessageId(sent);
+
 
         if (sentId) {
-            sessions.set(String(sentId), { senderId, threadId, createdAt: now() });
-            log("sent, stored id:", sentId);
+            rememberBotMessage(
+                session,
+                sentId
+            );
+
+            log(
+                "reply sent:",
+                sentId,
+                "| thread:",
+                threadId
+            );
         } else {
-            log("WARN: no id returned (bot-reply detection will handle replies)");
+            /*
+             * ID না পেলে session active থাকবে,
+             * কিন্তু exact reply-chain detect করা সম্ভব হবে না।
+             */
+            touchSession(session);
+
+            log(
+                "WARN: sendMessage returned no message id"
+            );
         }
+
     } catch (err) {
-        log("SEND ERROR:", err.message);
+        log(
+            "SEND ERROR:",
+            err?.message || err
+        );
     }
 }
 
-/* --------------------------- Handler --------------------------- */
 
-async function onMessage() {
-    const { api, event } = normalizeArgs(arguments);
+/* ========================== CHAT HANDLER ========================= */
+
+async function onChat() {
+    const { api, event } =
+        normalizeArgs(arguments);
+
 
     sweepExpired();
 
-    const text = getText(event);
-    if (!text) return;
 
-    const senderId = getSenderId(event);
-    const replyInfo = getReplyInfo(event);
-
-    log("msg:", text, "| from:", senderId, "| replyTarget:", replyInfo?.id ?? null);
-
-    // One-time full event dump when a reply is detected -> paste this to me
-    if (DEBUG && replyInfo && !replyDumped) {
-        replyDumped = true;
-        try {
-            log("REPLY EVENT DUMP:", JSON.stringify(event));
-        } catch (err) {
-            log("REPLY EVENT DUMP failed:", err.message);
-        }
-    }
-
-    if (!isAllowed(senderId)) {
-        log("ignored (uid not allowed)");
+    if (!event) {
         return;
     }
 
-    // Conversation CONTINUE
-    if (replyInfo) {
-        const byStoredId = sessions.has(String(replyInfo.id));
-        const byBotFlag = isBotMessage(replyInfo.raw, api);
 
-        if (byStoredId || byBotFlag) {
-            if (byStoredId) sessions.delete(String(replyInfo.id));
-            log("conversation continued via " + (byStoredId ? "stored id" : "bot-reply detection"));
-            return deliver(api, event, text);
+    const text = getText(event);
+
+    if (!text) {
+        return;
+    }
+
+
+    const threadId = getThreadId(event);
+    const senderId = getSenderId(event);
+    const replyTargetId =
+        getReplyTargetId(event);
+
+
+    log(
+        "MESSAGE:",
+        text,
+        "| thread:",
+        threadId,
+        "| sender:",
+        senderId,
+        "| reply:",
+        replyTargetId
+    );
+
+
+    if (!threadId) {
+        log("ignored: no thread id");
+        return;
+    }
+
+
+    /* =========================================================
+     * 1. প্রথমে check করবে এটা কি BBY BOT-এর message-এ reply?
+     * ========================================================= */
+
+    const replySession =
+        getReplySession(
+            threadId,
+            replyTargetId
+        );
+
+
+    if (replySession) {
+
+        /*
+         * শুধু যে user conversation শুরু করেছিল
+         * তার reply গ্রহণ করবে।
+         */
+        if (
+            senderId &&
+            replySession.senderId &&
+            String(senderId) !==
+                String(replySession.senderId)
+        ) {
+            log("ignored: different user");
+            return;
         }
-        log("reply target is NOT a bot message -> ignored");
+
+
+        touchSession(replySession);
+
+
+        log(
+            "CONVERSATION REPLY:",
+            text
+        );
+
+
+        /*
+         * নতুন answer পাঠাবে।
+         *
+         * গুরুত্বপূর্ণ:
+         * session delete করছি না।
+         *
+         * কারণ নতুন bot message-এর ID
+         * deliver() আবার session-এ save করবে।
+         */
+        return deliver(
+            api,
+            event,
+            text,
+            replySession
+        );
     }
 
-    // Conversation NEW
-    if (text.toLowerCase().includes(BBY_TRIGGER)) {
-        log("new conversation started");
-        return deliver(api, event, text);
+
+    /* =========================================================
+     * 2. Reply না হলে শুধু "bby" trigger হলে নতুন conversation
+     *    শুরু হবে।
+     * ========================================================= */
+
+    const lowerText =
+        text.toLowerCase();
+
+
+    /*
+     * bby কোথাও থাকলে trigger হবে।
+     *
+     * আগের behavior-এর মতোই রাখা হয়েছে।
+     */
+    if (
+        lowerText.includes(
+            BBY_TRIGGER
+        )
+    ) {
+
+        log(
+            "BBY TRIGGER:",
+            text
+        );
+
+
+        /*
+         * একই thread-এ পুরোনো session থাকলে
+         * নতুন করে reset করা হবে।
+         */
+        const oldSession =
+            sessions.get(
+                String(threadId)
+            );
+
+
+        if (oldSession) {
+            sessions.delete(
+                String(threadId)
+            );
+        }
+
+
+        /*
+         * নতুন conversation
+         */
+        const newSession =
+            createSession(
+                threadId,
+                senderId
+            );
+
+
+        return deliver(
+            api,
+            event,
+            text,
+            newSession
+        );
     }
 
-    log("ignored (normal message)");
+
+    /*
+     * Normal message এবং bot-এর message-এ
+     * reply নয় → ignore.
+     */
+    log(
+        "ignored: normal message"
+    );
 }
 
-module.exports = onMessage;
+
+/* =========================== ON REPLY ============================= */
+
+/*
+ * কিছু loader onReply আলাদাভাবে call করতে পারে।
+ *
+ * তাই একই conversation logic ব্যবহার করা হচ্ছে।
+ */
+async function onReply() {
+    return onChat.apply(
+        null,
+        arguments
+    );
+}
+
+
+/* ============================ EXPORTS ============================ */
+
+module.exports = {
+
+    config: {
+        name: "bby",
+
+        author: "Idle×Saow",
+
+        version: "1.0.6",
+
+        description:
+            "Non-prefix bby AI chatbot for Instagram Direct",
+
+        category: "ai",
+
+        nonPrefix: true,
+
+        noPrefix: true,
+
+        cooldown: 3,
+    },
+
+
+    onChat,
+
+    onReply,
+
+
+    /*
+     * Loader compatibility
+     */
+    onMessage: onChat,
+
+    handleEvent: onChat,
+
+    handleReply: onReply,
+
+    onStart: onChat,
+
+    run: onChat,
+
+    execute: onChat,
+
+    start: onChat,
+};
