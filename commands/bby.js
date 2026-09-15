@@ -2,11 +2,12 @@
 
 /**
  * ============================================================
- *  bby.js — Instagram Direct non-prefix AI chatbot command
+ *  bby.js — Instagram Direct non-prefix AI chatbot
  *  Author : Idle×Saow
  *  ZERO DEPENDENCY — Node 18+ built-in fetch
  * ============================================================
  */
+
 
 /* ============================ CONFIG ============================ */
 
@@ -23,51 +24,34 @@ const BBY_FALLBACK_MESSAGE =
 const BBY_TRIGGER = "bby";
 
 /*
- * Conversation কতক্ষণ active থাকবে
- * 30 minutes
+ * Conversation timeout
  */
 const SESSION_TTL_MS = 30 * 60 * 1000;
+
 
 /* ================================================================= */
 
 
 /*
  * ============================================================
- * SESSION SYSTEM
+ * Conversation sessions
+ *
+ * threadID -> {
+ *   userId,
+ *   botMessageId,
+ *   createdAt,
+ *   lastActivity
+ * }
+ *
+ * শুধুমাত্র latest bot message-এ reply করলে
+ * conversation continue হবে।
  * ============================================================
- *
- * threadId অনুযায়ী conversation রাখা হবে।
- *
- * Example:
- *
- * User:
- *   bby ki koro
- *
- * Bot:
- *   bose asi...
- *
- * User:
- *   [reply to bot] tumi ki eka?
- *
- * Bot:
- *   ha...
- *
- * User:
- *   [reply to bot] khaiso?
- *
- * Bot:
- *   na...
- *
- * এভাবে chain চলবে।
- *
- * প্রতিবার নতুন bot reply আসার পর তার message ID
- * আবার session-এর মধ্যে save হবে।
  */
 
 const sessions = new Map();
 
 
-/* ============================ HELPERS ============================ */
+/* ============================ DEBUG ============================== */
 
 function log(...args) {
     if (DEBUG) {
@@ -75,31 +59,40 @@ function log(...args) {
     }
 }
 
+
+/* ============================ TIME =============================== */
+
 function now() {
     return Date.now();
 }
 
 
-/*
- * Expired conversation remove
- */
+/* ======================== SESSION CLEAN ========================== */
+
 function sweepExpired() {
     const current = now();
 
     for (const [threadId, session] of sessions) {
-        if (current - session.createdAt > SESSION_TTL_MS) {
-            log("session expired:", threadId);
+        if (
+            current - session.lastActivity >
+            SESSION_TTL_MS
+        ) {
+            log(
+                "conversation expired:",
+                threadId
+            );
+
             sessions.delete(threadId);
         }
     }
 }
 
 
-/*
- * Timeout signal
- */
+/* =========================== TIMEOUT ============================= */
+
 function makeTimeoutSignal() {
-    const controller = new AbortController();
+    const controller =
+        new AbortController();
 
     const timer = setTimeout(() => {
         controller.abort();
@@ -111,37 +104,38 @@ function makeTimeoutSignal() {
 }
 
 
-/* ===================== LOADER ARGUMENT ADAPTER ==================== */
+/* ===================== LOADER ADAPTER ============================ */
 
 function normalizeArgs(args) {
-    const a = args[0];
+    const first = args[0];
 
     if (
-        a &&
-        typeof a === "object" &&
-        (a.api !== undefined || a.event !== undefined)
+        first &&
+        typeof first === "object" &&
+        (
+            first.api !== undefined ||
+            first.event !== undefined
+        )
     ) {
         return {
-            api: a.api,
-            event: a.event,
+            api: first.api,
+            event: first.event
         };
     }
 
     return {
         api: args[0],
-        event: args[1],
+        event: args[1]
     };
 }
 
 
-/* ===================== EVENT FIELD EXTRACTORS ==================== */
+/* ===================== MESSAGE ID =============================== */
 
-
-/*
- * Message ID বের করা
- */
 function getMessageId(message) {
-    if (!message) return null;
+    if (!message) {
+        return null;
+    }
 
     if (typeof message === "string") {
         return message;
@@ -153,20 +147,22 @@ function getMessageId(message) {
         message.message_id ??
         message.item_id ??
         message.itemId ??
-        message.id ??
         message.mid ??
+        message.id ??
         message.message?.messageID ??
+        message.message?.messageId ??
         message.message?.id ??
         null
     );
 }
 
 
-/*
- * Sender ID
- */
+/* ======================== SENDER ID ============================== */
+
 function getSenderId(event) {
-    if (!event) return null;
+    if (!event) {
+        return null;
+    }
 
     return (
         event.senderID ??
@@ -182,11 +178,12 @@ function getSenderId(event) {
 }
 
 
-/*
- * Thread / conversation ID
- */
+/* ======================== THREAD ID ============================== */
+
 function getThreadId(event) {
-    if (!event) return null;
+    if (!event) {
+        return null;
+    }
 
     return (
         event.threadID ??
@@ -201,13 +198,14 @@ function getThreadId(event) {
 }
 
 
-/*
- * Message text
- */
-function getText(event) {
-    if (!event) return "";
+/* =========================== TEXT ================================ */
 
-    const body =
+function getText(event) {
+    if (!event) {
+        return "";
+    }
+
+    const text =
         event.body ??
         event.text ??
         event.content ??
@@ -216,34 +214,34 @@ function getText(event) {
         event.message?.content ??
         "";
 
-    return typeof body === "string"
-        ? body.trim()
+    return typeof text === "string"
+        ? text.trim()
         : "";
 }
 
 
-/*
- * Reply object বের করা
- */
+/* ========================== REPLY DATA =========================== */
+
 function getReplyObject(event) {
-    if (!event) return null;
+    if (!event) {
+        return null;
+    }
 
     return (
         event.messageReply ??
+        event.message_reply ??
         event.replyTo ??
         event.repliedTo ??
         event.reply_to ??
         event.reply ??
-        event.message?.replyTo ??
         event.message?.messageReply ??
+        event.message?.replyTo ??
+        event.message?.reply ??
         null
     );
 }
 
 
-/*
- * Reply করা message-এর ID
- */
 function getReplyTargetId(event) {
     const reply = getReplyObject(event);
 
@@ -257,52 +255,76 @@ function getReplyTargetId(event) {
 
 /* ============================ BBY API ============================ */
 
-async function babyAPI(text, attachments = []) {
-    /*
-     * Base API URL
-     */
-    const baseRes = await fetch(BASE_API_URL, {
-        signal: makeTimeoutSignal(),
-    });
+async function babyAPI(
+    text,
+    attachments = []
+) {
+
+    const baseRes = await fetch(
+        BASE_API_URL,
+        {
+            signal:
+                makeTimeoutSignal()
+        }
+    );
+
 
     if (!baseRes.ok) {
-        throw new Error(`base URL HTTP ${baseRes.status}`);
-    }
-
-    const baseData = await baseRes.json();
-
-    if (!baseData || !baseData.mahmud) {
-        throw new Error("base API URL missing");
+        throw new Error(
+            `base URL HTTP ${baseRes.status}`
+        );
     }
 
 
-    /*
-     * BBY API
-     */
+    const baseData =
+        await baseRes.json();
+
+
+    if (
+        !baseData ||
+        !baseData.mahmud
+    ) {
+        throw new Error(
+            "Invalid base API response"
+        );
+    }
+
+
+    const apiUrl =
+        `${baseData.mahmud}/api/baby` +
+        `?text=${encodeURIComponent(text)}` +
+        `&font=3`;
+
+
     const res = await fetch(
-        `${baseData.mahmud}/api/baby?text=${encodeURIComponent(text)}&font=3`,
+        apiUrl,
         {
             method: "POST",
 
             headers: {
-                "Content-Type": "application/json",
+                "Content-Type":
+                    "application/json"
             },
 
             body: JSON.stringify({
-                attachments,
+                attachments
             }),
 
-            signal: makeTimeoutSignal(),
+            signal:
+                makeTimeoutSignal()
         }
     );
 
 
     if (!res.ok) {
-        throw new Error(`baby API HTTP ${res.status}`);
+        throw new Error(
+            `baby API HTTP ${res.status}`
+        );
     }
 
 
-    const data = await res.json();
+    const data =
+        await res.json();
 
 
     if (
@@ -310,7 +332,9 @@ async function babyAPI(text, attachments = []) {
         typeof data.reply !== "string" ||
         !data.reply.trim()
     ) {
-        throw new Error("baby API returned empty reply");
+        throw new Error(
+            "baby API returned empty reply"
+        );
     }
 
 
@@ -318,220 +342,240 @@ async function babyAPI(text, attachments = []) {
 }
 
 
-/* ======================== SESSION FUNCTIONS ====================== */
+/* ======================= START SESSION =========================== */
 
+function startConversation(
+    threadId,
+    userId
+) {
 
-/*
- * নতুন conversation শুরু
- */
-function createSession(threadId, senderId) {
     const session = {
         threadId: String(threadId),
-        senderId: senderId ? String(senderId) : null,
+
+        userId:
+            userId !== null &&
+            userId !== undefined
+                ? String(userId)
+                : null,
 
         /*
-         * Bot-এর সব recent message ID
-         * এইগুলোতে user reply করলে chain চলবে।
+         * সর্বশেষ bot message ID
          */
-        botMessageIds: new Set(),
+        botMessageId: null,
 
         createdAt: now(),
-        lastActivity: now(),
+
+        lastActivity: now()
     };
 
-    sessions.set(String(threadId), session);
 
-    log("conversation started:", threadId);
+    sessions.set(
+        String(threadId),
+        session
+    );
+
+
+    log(
+        "conversation started:",
+        threadId,
+        "user:",
+        userId
+    );
+
 
     return session;
 }
 
 
-/*
- * Existing session update
- */
-function touchSession(session) {
-    if (!session) return;
+/* ======================= SESSION UPDATE ========================== */
 
-    session.lastActivity = now();
-    session.createdAt = now();
+function updateSession(
+    session,
+    botMessageId
+) {
+
+    if (!session) {
+        return;
+    }
+
+
+    if (botMessageId) {
+        session.botMessageId =
+            String(botMessageId);
+    }
+
+
+    session.lastActivity =
+        now();
+
+    session.createdAt =
+        now();
 }
 
 
-/*
- * Bot-এর নতুন message ID session-এ রাখা
- */
-function rememberBotMessage(session, messageId) {
-    if (!session || !messageId) return;
+/* ===================== CHECK BOT REPLY =========================== */
 
-    session.botMessageIds.add(String(messageId));
+function isConversationReply(
+    session,
+    replyTargetId
+) {
 
-    /*
-     * শুধু recent কয়েকটা ID রাখি
-     */
-    if (session.botMessageIds.size > 10) {
-        const first = session.botMessageIds.values().next().value;
-
-        if (first) {
-            session.botMessageIds.delete(first);
-        }
+    if (
+        !session ||
+        !replyTargetId ||
+        !session.botMessageId
+    ) {
+        return false;
     }
 
-    touchSession(session);
 
-    log(
-        "bot message stored:",
-        messageId,
-        "| total:",
-        session.botMessageIds.size
+    return (
+        String(replyTargetId) ===
+        String(session.botMessageId)
     );
 }
 
 
-/*
- * এই message ID কি BBY bot-এর message?
- */
-function isBotMessage(session, messageId) {
-    if (!session || !messageId) {
-        return false;
-    }
+/* ========================= DELIVERY ============================== */
 
-    return session.botMessageIds.has(String(messageId));
-}
+async function deliver(
+    api,
+    event,
+    userText,
+    session
+) {
 
-
-/*
- * Reply chain-এর জন্য session খোঁজা
- */
-function getReplySession(threadId, replyTargetId) {
-    if (!threadId || !replyTargetId) {
-        return null;
-    }
-
-    const session = sessions.get(String(threadId));
-
-    if (!session) {
-        return null;
-    }
-
-    if (isBotMessage(session, replyTargetId)) {
-        return session;
-    }
-
-    return null;
-}
-
-
-/* ========================= SEND MESSAGE ========================== */
-
-async function deliver(api, event, userText, session = null) {
     let output;
 
-    /*
-     * API call
-     */
+
+    /* -------------------- API REQUEST -------------------- */
+
     try {
-        output = await babyAPI(userText);
 
-        log("API reply:", output);
-    } catch (err) {
-        log("API ERROR:", err?.message || err);
+        output =
+            await babyAPI(
+                userText
+            );
 
-        output = BBY_FALLBACK_MESSAGE;
+
+        log(
+            "API reply:",
+            output
+        );
+
+    } catch (error) {
+
+        log(
+            "API ERROR:",
+            error?.message ||
+            error
+        );
+
+        output =
+            BBY_FALLBACK_MESSAGE;
     }
 
 
-    /*
-     * sendMessage check
-     */
-    try {
-        if (
-            !api ||
-            typeof api.sendMessage !== "function"
-        ) {
-            log("ERROR: api.sendMessage not found");
-            return;
-        }
+    /* -------------------- SEND --------------------------- */
 
+    if (
+        !api ||
+        typeof api.sendMessage !==
+            "function"
+    ) {
 
-        const threadId = getThreadId(event);
-
-        if (!threadId) {
-            log("ERROR: thread id not found");
-            return;
-        }
-
-
-        const senderId = getSenderId(event);
-
-
-        /*
-         * Session না থাকলে নতুন session বানাবে।
-         *
-         * এটা প্রথম "bby" trigger-এর সময় হবে।
-         */
-        if (!session) {
-            session = createSession(
-                threadId,
-                senderId
-            );
-        }
-
-
-        /*
-         * Message পাঠানো
-         */
-        const sent = await api.sendMessage(
-            output,
-            threadId
+        log(
+            "ERROR: sendMessage unavailable"
         );
 
+        return;
+    }
+
+
+    const threadId =
+        getThreadId(event);
+
+
+    if (!threadId) {
+
+        log(
+            "ERROR: thread ID missing"
+        );
+
+        return;
+    }
+
+
+    try {
+
+        const sent =
+            await api.sendMessage(
+                output,
+                threadId
+            );
+
 
         /*
-         * Instagram framework বিভিন্ন format-এ
-         * sent message return করতে পারে।
+         * Instagram bot framework
+         * যেভাবেই ID return করুক,
+         * সেটা বের করার চেষ্টা।
          */
-        const sentId = getMessageId(sent);
+        const sentId =
+            getMessageId(sent);
 
 
         if (sentId) {
-            rememberBotMessage(
+
+            updateSession(
                 session,
                 sentId
             );
 
-            log(
-                "reply sent:",
-                sentId,
-                "| thread:",
-                threadId
-            );
-        } else {
-            /*
-             * ID না পেলে session active থাকবে,
-             * কিন্তু exact reply-chain detect করা সম্ভব হবে না।
-             */
-            touchSession(session);
 
             log(
-                "WARN: sendMessage returned no message id"
+                "new bot message:",
+                sentId
+            );
+
+        } else {
+
+            /*
+             * ID না পেলেও conversation
+             * কিছুক্ষণ active থাকবে।
+             */
+            updateSession(
+                session,
+                null
+            );
+
+
+            log(
+                "WARNING: bot message ID not returned"
             );
         }
 
-    } catch (err) {
+
+    } catch (error) {
+
         log(
             "SEND ERROR:",
-            err?.message || err
+            error?.message ||
+            error
         );
     }
 }
 
 
-/* ========================== CHAT HANDLER ========================= */
+/* ============================ CHAT ================================ */
 
 async function onChat() {
-    const { api, event } =
-        normalizeArgs(arguments);
+
+    const {
+        api,
+        event
+    } = normalizeArgs(
+        arguments
+    );
 
 
     sweepExpired();
@@ -542,21 +586,39 @@ async function onChat() {
     }
 
 
-    const text = getText(event);
+    const text =
+        getText(event);
+
 
     if (!text) {
         return;
     }
 
 
-    const threadId = getThreadId(event);
-    const senderId = getSenderId(event);
+    const threadId =
+        getThreadId(event);
+
+
+    const senderId =
+        getSenderId(event);
+
+
     const replyTargetId =
         getReplyTargetId(event);
 
 
+    if (!threadId) {
+
+        log(
+            "ignored: no thread ID"
+        );
+
+        return;
+    }
+
+
     log(
-        "MESSAGE:",
+        "incoming:",
         text,
         "| thread:",
         threadId,
@@ -567,115 +629,90 @@ async function onChat() {
     );
 
 
-    if (!threadId) {
-        log("ignored: no thread id");
-        return;
-    }
+    /* ========================================================
+     * 1. EXISTING CONVERSATION
+     *
+     * User যদি bot-এর সর্বশেষ message-এ reply করে,
+     * তাহলে bby না লিখেও conversation চলবে।
+     * ======================================================== */
 
-
-    /* =========================================================
-     * 1. প্রথমে check করবে এটা কি BBY BOT-এর message-এ reply?
-     * ========================================================= */
-
-    const replySession =
-        getReplySession(
-            threadId,
-            replyTargetId
+    const session =
+        sessions.get(
+            String(threadId)
         );
 
 
-    if (replySession) {
+    if (
+        session &&
+        isConversationReply(
+            session,
+            replyTargetId
+        )
+    ) {
 
         /*
-         * শুধু যে user conversation শুরু করেছিল
-         * তার reply গ্রহণ করবে।
+         * Conversation যে user শুরু করেছে
+         * শুধু সেই user continue করতে পারবে।
          */
         if (
+            session.userId &&
             senderId &&
-            replySession.senderId &&
-            String(senderId) !==
-                String(replySession.senderId)
+            String(session.userId) !==
+                String(senderId)
         ) {
-            log("ignored: different user");
+
+            log(
+                "ignored: different user"
+            );
+
             return;
         }
 
 
-        touchSession(replySession);
-
-
         log(
-            "CONVERSATION REPLY:",
+            "CONVERSATION CONTINUE:",
             text
         );
 
 
         /*
-         * নতুন answer পাঠাবে।
+         * session delete করা হবে না।
          *
-         * গুরুত্বপূর্ণ:
-         * session delete করছি না।
-         *
-         * কারণ নতুন bot message-এর ID
-         * deliver() আবার session-এ save করবে।
+         * Bot নতুন message পাঠানোর পর
+         * তার নতুন ID আবার session-এ বসবে।
          */
         return deliver(
             api,
             event,
             text,
-            replySession
+            session
         );
     }
 
 
-    /* =========================================================
-     * 2. Reply না হলে শুধু "bby" trigger হলে নতুন conversation
-     *    শুরু হবে।
-     * ========================================================= */
-
-    const lowerText =
-        text.toLowerCase();
-
-
-    /*
-     * bby কোথাও থাকলে trigger হবে।
+    /* ========================================================
+     * 2. NEW BBY CONVERSATION
      *
-     * আগের behavior-এর মতোই রাখা হয়েছে।
-     */
+     * শুধু bby থাকলে নতুন conversation শুরু।
+     * ======================================================== */
+
     if (
-        lowerText.includes(
-            BBY_TRIGGER
-        )
+        text
+            .toLowerCase()
+            .includes(BBY_TRIGGER)
     ) {
 
         log(
-            "BBY TRIGGER:",
+            "NEW BBY TRIGGER:",
             text
         );
 
 
         /*
-         * একই thread-এ পুরোনো session থাকলে
-         * নতুন করে reset করা হবে।
-         */
-        const oldSession =
-            sessions.get(
-                String(threadId)
-            );
-
-
-        if (oldSession) {
-            sessions.delete(
-                String(threadId)
-            );
-        }
-
-
-        /*
-         * নতুন conversation
+         * পুরোনো conversation থাকলে reset
          */
         const newSession =
-            createSession(
+            startConversation(
                 threadId,
                 senderId
             );
@@ -690,10 +727,13 @@ async function onChat() {
     }
 
 
-    /*
-     * Normal message এবং bot-এর message-এ
-     * reply নয় → ignore.
-     */
+    /* ========================================================
+     * 3. NORMAL MESSAGE
+     *
+     * bby নেই এবং bot-এর message-এ reply-ও নয়
+     * → কিছু করবে না।
+     * ======================================================== */
+
     log(
         "ignored: normal message"
     );
@@ -703,11 +743,11 @@ async function onChat() {
 /* =========================== ON REPLY ============================= */
 
 /*
- * কিছু loader onReply আলাদাভাবে call করতে পারে।
- *
- * তাই একই conversation logic ব্যবহার করা হচ্ছে।
+ * Loader যদি onReply আলাদা করে call করে,
+ * একই logic ব্যবহার করবে।
  */
 async function onReply() {
+
     return onChat.apply(
         null,
         arguments
@@ -715,27 +755,40 @@ async function onReply() {
 }
 
 
-/* ============================ EXPORTS ============================ */
+/* ============================ EXPORT ============================== */
 
 module.exports = {
 
     config: {
+
         name: "bby",
 
         author: "Idle×Saow",
 
-        version: "1.0.6",
+        version: "1.0.7",
 
         description:
-            "Non-prefix bby AI chatbot for Instagram Direct",
+            "Non-prefix bby AI chatbot with reply conversation chain",
 
         category: "ai",
 
+
+        /*
+         * বিভিন্ন loader-এর জন্য
+         * non-prefix flags রাখা হয়েছে।
+         */
         nonPrefix: true,
 
         noPrefix: true,
 
-        cooldown: 3,
+        prefix: false,
+
+        hasPrefix: false,
+
+        usePrefix: false,
+
+
+        cooldown: 3
     },
 
 
@@ -759,5 +812,5 @@ module.exports = {
 
     execute: onChat,
 
-    start: onChat,
+    start: onChat
 };
