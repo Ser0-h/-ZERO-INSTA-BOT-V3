@@ -17,68 +17,105 @@ module.exports = {
         }
     },
 
-    onStart: async function ({ api, event, message }) {
-        var targetID =
+    langs: {
+        en: {
+            noPfp: "❌ No profile picture found.",
+            rateLimit: "⚠️ Instagram temporarily limited this profile request. Try again later.",
+            failed: "❌ Failed: %1"
+        }
+    },
+
+    onStart: async function ({
+        api,
+        event,
+        message,
+        getLang,
+        usersData
+    }) {
+        var targetID = "";
+
+        if (
             event.messageReply &&
             event.messageReply.senderID
-                ? String(event.messageReply.senderID)
-                : String(event.senderID || event.userID || "");
+        ) {
+            targetID = String(event.messageReply.senderID);
+        } else {
+            targetID = String(
+                event.senderID ||
+                event.userID ||
+                ""
+            );
+        }
 
         if (!targetID) {
-            return message.reply("❌ User ID not found.");
+            return message.reply(
+                getLang("failed", "user ID not found")
+            );
         }
 
         try {
-            var info = await new Promise(function (resolve, reject) {
-                var finished = false;
+            /*
+             * First try cached user information.
+             */
+            var cached = null;
 
-                var timer = setTimeout(function () {
-                    if (finished) return;
-
-                    finished = true;
-                    reject(new Error("getUserInfo timeout"));
-                }, 10000);
-
-                try {
-                    api.getUserInfo(targetID, function (error, result) {
-                        if (finished) return;
-
-                        finished = true;
-                        clearTimeout(timer);
-
-                        if (error) {
-                            return reject(error);
-                        }
-
-                        resolve(result);
-                    });
-                } catch (error) {
-                    if (finished) return;
-
-                    finished = true;
-                    clearTimeout(timer);
-
-                    reject(error);
+            try {
+                if (usersData && usersData.get) {
+                    cached = await usersData.get(targetID);
                 }
-            });
+            } catch (_) {}
 
-            if (!info) {
-                return message.reply("❌ User information not found.");
+            var url = null;
+
+            if (cached) {
+                url =
+                    cached.profilePicUrl ||
+                    cached.profile_pic_url ||
+                    cached.profilePictureUrl ||
+                    cached.profile_picture_url ||
+                    cached.avatarUrl ||
+                    cached.avatar_url ||
+                    null;
             }
 
-            var profile = info[targetID] || info;
+            /*
+             * Only request Instagram if cache has no PP URL.
+             */
+            if (!url) {
+                var info = await api.userInfo.getUserInfo(targetID);
 
-            var url =
-                profile.profilePicUrl ||
-                profile.profile_pic_url ||
-                profile.hdProfilePicUrl ||
-                profile.hd_profile_pic_url ||
-                profile.profilePictureUrl ||
-                profile.profile_picture_url;
+                if (!info) {
+                    return message.reply(
+                        getLang("noPfp")
+                    );
+                }
+
+                if (
+                    info.statusCode === 429 ||
+                    info.code === 429 ||
+                    (
+                        info.message &&
+                        String(info.message).indexOf("429") !== -1
+                    )
+                ) {
+                    return message.reply(
+                        getLang("rateLimit")
+                    );
+                }
+
+                if (
+                    info.profile_pic_url
+                ) {
+                    url =
+                        info.hd_profile_pic_url ||
+                        info.profile_pic_url;
+                }
+            }
 
             if (!url) {
-                console.log("[PP] User info response:", info);
-                return message.reply("❌ No profile picture found.");
+                return message.reply(
+                    getLang("noPfp")
+                );
             }
 
             await api.sendMessage(
@@ -89,12 +126,25 @@ module.exports = {
                 event
             );
 
-        } catch (error) {
-            console.error("[PP] Error:", error);
+        } catch (e) {
+            console.error("[PFP]", e);
+
+            var errorText =
+                e && e.message
+                    ? String(e.message)
+                    : "";
+
+            if (errorText.indexOf("429") !== -1) {
+                return message.reply(
+                    getLang("rateLimit")
+                );
+            }
 
             return message.reply(
-                "❌ PFP failed: " +
-                (error.message || "Unknown error")
+                getLang(
+                    "failed",
+                    errorText || "Unknown error"
+                )
             );
         }
     }
