@@ -4,7 +4,7 @@ module.exports = {
     config: {
         name: "pp",
         aliases: ["pfp"],
-        version: "1.0",
+        version: "1.0.0",
         author: "Idle×Saow",
         countDown: 5,
         role: 0,
@@ -13,101 +13,73 @@ module.exports = {
         },
         category: "media",
         guide: {
-            en: "{pn} | {pn} <userId> | {pn} @mention | {pn} (reply)"
+            en: "{pn} | {pn} (reply)"
         }
     },
 
-    langs: {
-        en: {
-            failed: "❌ Failed: %1",
-            noPfp: "❌ No profile picture found."
+    onStart: async function ({ api, event, message }) {
+        var targetID =
+            event.messageReply &&
+            event.messageReply.senderID
+                ? String(event.messageReply.senderID)
+                : String(event.senderID || event.userID || "");
+
+        if (!targetID) {
+            return message.reply("❌ User ID not found.");
         }
-    },
-
-    onStart: async function ({ api, event, args, message, getLang }) {
-        let targetId = null;
-
-        // !pp <userId>
-        if (args[0]) {
-            targetId = args[0].replace(/[^0-9]/g, "");
-        }
-
-        // !pp @mention
-        if (
-            !targetId &&
-            event.mentions &&
-            event.mentions.length
-        ) {
-            targetId = String(event.mentions[0]);
-        }
-
-        // Raw Instagram mention data
-        if (
-            !targetId &&
-            event.raw?.text_entities?.mentioned_user_ids?.length
-        ) {
-            targetId = String(
-                event.raw.text_entities.mentioned_user_ids[0]
-            );
-        }
-
-        // Reply to a message
-        if (!targetId && event.messageReply) {
-            targetId = String(
-                event.messageReply.user_id ||
-                event.messageReply.senderID ||
-                event.messageReply.raw?.user_id ||
-                ""
-            );
-        }
-
-        // No target → command sender
-        if (!targetId) {
-            targetId = String(
-                event.senderID ||
-                event.userID ||
-                ""
-            );
-        }
-
-        if (!targetId) {
-            return message.reply(
-                getLang("failed", "no target")
-            );
-        }
-
-        // Reaction helper
-        const react = async (emoji) => {
-            try {
-                await api.setMessageReaction(
-                    emoji,
-                    event.threadID,
-                    event.messageID,
-                    event.clientContext
-                );
-            } catch (_) {}
-        };
-
-        await react("⌛");
 
         try {
-            // Correct Instagram API method
-            const info = await api.userInfo.getUserInfo(targetId);
+            var info = await new Promise(function (resolve, reject) {
+                var finished = false;
 
-            if (
-                !info ||
-                !info.success ||
-                !info.profile_pic_url
-            ) {
-                await react("❌");
-                return message.reply(
-                    getLang("noPfp")
-                );
+                var timer = setTimeout(function () {
+                    if (finished) return;
+
+                    finished = true;
+                    reject(new Error("getUserInfo timeout"));
+                }, 10000);
+
+                try {
+                    api.getUserInfo(targetID, function (error, result) {
+                        if (finished) return;
+
+                        finished = true;
+                        clearTimeout(timer);
+
+                        if (error) {
+                            return reject(error);
+                        }
+
+                        resolve(result);
+                    });
+                } catch (error) {
+                    if (finished) return;
+
+                    finished = true;
+                    clearTimeout(timer);
+
+                    reject(error);
+                }
+            });
+
+            if (!info) {
+                return message.reply("❌ User information not found.");
             }
 
-            const url =
-                info.hd_profile_pic_url ||
-                info.profile_pic_url;
+            var profile = info[targetID] || info;
+
+            var url =
+                profile.profilePicUrl ||
+                profile.profile_pic_url ||
+                profile.hdProfilePicUrl ||
+                profile.hd_profile_pic_url ||
+                profile.profilePictureUrl ||
+                profile.profile_picture_url;
+
+            if (!url) {
+                console.log("[PP] User info response:", info);
+                return message.reply("❌ No profile picture found.");
+            }
 
             await api.sendMessage(
                 {
@@ -117,18 +89,12 @@ module.exports = {
                 event
             );
 
-            await react("✅");
-
-        } catch (e) {
-            console.error("[PP] Error:", e);
-
-            await react("❌");
+        } catch (error) {
+            console.error("[PP] Error:", error);
 
             return message.reply(
-                getLang(
-                    "failed",
-                    e?.message || "Unknown error"
-                )
+                "❌ PFP failed: " +
+                (error.message || "Unknown error")
             );
         }
     }
