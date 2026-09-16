@@ -1,121 +1,135 @@
 "use strict";
 
-/**
- * Profile Picture Command
- *
- * !pp          -> Sender's profile picture
- * !pp (reply)  -> Replied user's profile picture
- */
-
 module.exports = {
     config: {
         name: "pp",
-        aliases: ["pfp", "dp"],
-        version: "1.1.0",
+        aliases: ["pfp"],
+        version: "1.0",
         author: "Idle×Saow",
-        category: "utility",
-        description: "Send Instagram profile picture.",
-        usage: "{pn}",
-        cooldown: 3
+        countDown: 5,
+        role: 0,
+        description: {
+            en: "Get profile picture of a user"
+        },
+        category: "media",
+        guide: {
+            en: "{pn} | {pn} <userId> | {pn} @mention | {pn} (reply)"
+        }
     },
 
-    onStart: async function ({ api, message, event }) {
-        try {
-            const targetID = String(
-                event.messageReply?.senderID ||
+    langs: {
+        en: {
+            failed: "❌ Failed: %1",
+            noPfp: "❌ No profile picture found."
+        }
+    },
+
+    onStart: async function ({ api, event, args, message, getLang }) {
+        let targetId = null;
+
+        // !pp <userId>
+        if (args[0]) {
+            targetId = args[0].replace(/[^0-9]/g, "");
+        }
+
+        // !pp @mention
+        if (
+            !targetId &&
+            event.mentions &&
+            event.mentions.length
+        ) {
+            targetId = String(event.mentions[0]);
+        }
+
+        // Raw Instagram mention data
+        if (
+            !targetId &&
+            event.raw?.text_entities?.mentioned_user_ids?.length
+        ) {
+            targetId = String(
+                event.raw.text_entities.mentioned_user_ids[0]
+            );
+        }
+
+        // Reply to a message
+        if (!targetId && event.messageReply) {
+            targetId = String(
+                event.messageReply.user_id ||
+                event.messageReply.senderID ||
+                event.messageReply.raw?.user_id ||
+                ""
+            );
+        }
+
+        // No target → command sender
+        if (!targetId) {
+            targetId = String(
                 event.senderID ||
                 event.userID ||
                 ""
             );
+        }
 
-            if (!targetID) {
-                return message.reply("⚠️ User ID not found.");
-            }
+        if (!targetId) {
+            return message.reply(
+                getLang("failed", "no target")
+            );
+        }
 
-            const getInfo = () => {
-                return new Promise((resolve, reject) => {
-                    let finished = false;
+        // Reaction helper
+        const react = async (emoji) => {
+            try {
+                await api.setMessageReaction(
+                    emoji,
+                    event.threadID,
+                    event.messageID,
+                    event.clientContext
+                );
+            } catch (_) {}
+        };
 
-                    const callback = (error, result) => {
-                        if (finished) return;
-                        finished = true;
+        await react("⌛");
 
-                        if (error) return reject(error);
-                        resolve(result);
-                    };
-
-                    try {
-                        const result = api.getUserInfo(targetID, callback);
-
-                        // Also support Promise-based API
-                        if (result && typeof result.then === "function") {
-                            result
-                                .then(data => callback(null, data))
-                                .catch(error => callback(error));
-                        }
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-            };
-
-            const result = await getInfo();
-
-            if (!result) {
-                return message.reply("⚠️ Instagram user information not found.");
-            }
-
-            /*
-             * getUserInfo() may return:
-             *
-             * { "123": { ...profile } }
-             *
-             * OR
-             *
-             * { ...profile }
-             */
-            let profile = result;
+        try {
+            // Correct Instagram API method
+            const info = await api.userInfo.getUserInfo(targetId);
 
             if (
-                result[targetID] &&
-                typeof result[targetID] === "object"
+                !info ||
+                !info.success ||
+                !info.profile_pic_url
             ) {
-                profile = result[targetID];
+                await react("❌");
+                return message.reply(
+                    getLang("noPfp")
+                );
             }
 
-            /*
-             * Find profile picture URL from common
-             * ig-chat-api / Instagram response fields.
-             */
-            const profilePic =
-                profile.profilePicUrl ||
-                profile.profile_pic_url ||
-                profile.profilePictureUrl ||
-                profile.profile_picture_url ||
-                profile.hdProfilePicUrl ||
-                profile.hd_profile_pic_url ||
-                profile.profilePic ||
-                profile.profile_picture ||
-                profile.avatar ||
-                profile.avatarUrl ||
-                profile.avatar_url ||
-                profile.picture ||
-                profile.pictureUrl ||
-                profile.picture_url ||
-                null;
+            const url =
+                info.hd_profile_pic_url ||
+                info.profile_pic_url;
 
-            if (!profilePic || typeof profilePic !== "string") {
-                console.log("[PP] UserInfo response:", profile);
-                return message.reply("⚠️ Profile picture URL not found.");
-            }
+            await api.sendMessage(
+                {
+                    attachment: url
+                },
+                event.threadID,
+                event
+            );
 
-            await message.reply({
-                attachment: profilePic
-            });
+            await react("✅");
 
-        } catch (error) {
-            console.error("[PP] Failed:", error);
-            return message.reply("❌ Failed to fetch profile picture.");
+        } catch (e) {
+            console.error("[PP] Error:", e);
+
+            await react("❌");
+
+            return message.reply(
+                getLang(
+                    "failed",
+                    e?.message || "Unknown error"
+                )
+            );
         }
     }
 };
