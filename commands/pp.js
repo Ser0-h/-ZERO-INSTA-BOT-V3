@@ -1,33 +1,91 @@
 "use strict";
 
-const axios = require("axios");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
 const BASE_API_CONFIG =
     "https://raw.githubusercontent.com/mahmudx7/HINATA/main/baseApiUrl.json";
 
-const getBaseApiUrl = async () => {
-    const response = await axios.get(BASE_API_CONFIG, {
-        timeout: 10000
+function getJSON(url) {
+    return new Promise((resolve, reject) => {
+        https.get(
+            url,
+            {
+                headers: {
+                    "User-Agent": "Mozilla/5.0"
+                }
+            },
+            (res) => {
+                let data = "";
+
+                res.on("data", chunk => {
+                    data += chunk;
+                });
+
+                res.on("end", () => {
+                    if (res.statusCode < 200 || res.statusCode >= 300) {
+                        return reject(
+                            new Error(`HTTP ${res.statusCode}`)
+                        );
+                    }
+
+                    try {
+                        resolve(JSON.parse(data));
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            }
+        ).on("error", reject);
     });
+}
 
-    if (!response.data?.mahmud) {
-        throw new Error("Base API URL not found");
-    }
+function downloadFile(url, filePath) {
+    return new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(filePath);
 
-    return response.data.mahmud;
-};
+        https.get(
+            url,
+            {
+                headers: {
+                    "User-Agent": "Mozilla/5.0"
+                }
+            },
+            (res) => {
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    file.close();
+                    fs.unlink(filePath, () => {});
+                    return reject(
+                        new Error(`HTTP ${res.statusCode}`)
+                    );
+                }
+
+                res.pipe(file);
+
+                file.on("finish", () => {
+                    file.close(resolve);
+                });
+            }
+        ).on("error", (err) => {
+            file.close();
+            fs.unlink(filePath, () => {});
+            reject(err);
+        });
+    });
+}
 
 module.exports = {
     config: {
         name: "pp",
         aliases: ["profile", "dp", "pfp"],
-        version: "1.0.0",
+        version: "1.0.1",
         author: "Idle×Saow",
         countDown: 5,
         role: 0,
-        description: "Fetch user's profile picture",
+        description: {
+            en: "Fetch user's profile picture"
+        },
         category: "utility",
         guide: {
             en:
@@ -37,20 +95,22 @@ module.exports = {
         }
     },
 
-    onStart: async function ({ api, message, args, event, usersData }) {
+    onStart: async function ({
+        api,
+        message,
+        event,
+        usersData
+    }) {
         let uid = event.senderID;
 
         try {
-            /*
-             * Priority:
-             * 1. Replied user's UID
-             * 2. Mentioned user's UID
-             * 3. Sender's UID
-             */
-
+            // Reply করা user
             if (event.messageReply?.senderID) {
                 uid = event.messageReply.senderID;
-            } else if (
+            }
+
+            // Mention করা user
+            else if (
                 event.mentions &&
                 Object.keys(event.mentions).length > 0
             ) {
@@ -58,7 +118,9 @@ module.exports = {
             }
 
             if (!uid) {
-                return message.reply("❌ User ID পাওয়া যায়নি।");
+                return message.reply(
+                    "❌ User ID পাওয়া যায়নি।"
+                );
             }
 
             api.setMessageReaction(
@@ -68,31 +130,26 @@ module.exports = {
                 true
             );
 
-            const baseUrl = await getBaseApiUrl();
+            // Base API URL
+            const baseData = await getJSON(BASE_API_CONFIG);
 
-            /*
-             * Original API
-             * /api/pfp?mahmud=UID
-             */
+            if (!baseData?.mahmud) {
+                throw new Error("Base API URL not found");
+            }
+
+            const baseUrl = String(baseData.mahmud).replace(/\/+$/, "");
+
+            // PFP API
             const pfpUrl =
                 `${baseUrl}/api/pfp?mahmud=${encodeURIComponent(uid)}`;
 
-            const response = await axios.get(pfpUrl, {
-                responseType: "arraybuffer",
-                timeout: 15000,
-                headers: {
-                    "User-Agent": "Mozilla/5.0"
-                }
-            });
-
-            if (!response.data || response.data.length === 0) {
-                throw new Error("Empty profile picture response");
-            }
-
+            // Cache folder
             const cacheDir = path.join(__dirname, "cache");
 
             if (!fs.existsSync(cacheDir)) {
-                fs.mkdirSync(cacheDir, { recursive: true });
+                fs.mkdirSync(cacheDir, {
+                    recursive: true
+                });
             }
 
             const cachePath = path.join(
@@ -100,7 +157,8 @@ module.exports = {
                 `pp_${uid}_${Date.now()}.jpg`
             );
 
-            fs.writeFileSync(cachePath, Buffer.from(response.data));
+            // Download PFP
+            await downloadFile(pfpUrl, cachePath);
 
             let userName = "User";
 
@@ -108,13 +166,13 @@ module.exports = {
                 if (usersData?.getName) {
                     userName = await usersData.getName(uid);
                 }
-            } catch (_) {
-                // Name unavailable, use default
-            }
+            } catch (_) {}
 
             return message.reply(
                 {
-                    body: `> 🎀 ${userName}\n\n𝐇𝐞𝐫𝐞'𝐬 𝐲𝐨𝐮𝐫 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 𝐩𝐢𝐜𝐭𝐮𝐫𝐞 ✨`,
+                    body:
+                        `> 🎀 ${userName}\n` +
+                        `𝐇𝐞𝐫𝐞'𝐬 𝐲𝐨𝐮𝐫 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 𝐩𝐢𝐜𝐭𝐮𝐫𝐞 ✨`,
                     attachment: fs.createReadStream(cachePath)
                 },
                 () => {
@@ -146,7 +204,7 @@ module.exports = {
             );
 
             return message.reply(
-                "❌ Profile picture আনতে সমস্যা হয়েছে। API হয়তো বর্তমানে unavailable।"
+                "❌ Profile picture আনতে সমস্যা হয়েছে।"
             );
         }
     }
