@@ -1,150 +1,152 @@
 "use strict";
 
+const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
+
+const BASE_API_CONFIG =
+    "https://raw.githubusercontent.com/mahmudx7/HINATA/main/baseApiUrl.json";
+
+const getBaseApiUrl = async () => {
+    const response = await axios.get(BASE_API_CONFIG, {
+        timeout: 10000
+    });
+
+    if (!response.data?.mahmud) {
+        throw new Error("Base API URL not found");
+    }
+
+    return response.data.mahmud;
+};
+
 module.exports = {
     config: {
         name: "pp",
-        aliases: ["pfp"],
+        aliases: ["profile", "dp", "pfp"],
         version: "1.0.0",
         author: "Idle×Saow",
         countDown: 5,
         role: 0,
-        description: {
-            en: "Get profile picture of a user"
-        },
-        category: "media",
+        description: "Fetch user's profile picture",
+        category: "utility",
         guide: {
-            en: "{pn} | {pn} (reply)"
+            en:
+                "{pn}\n" +
+                "{pn} @mention\n" +
+                "{pn} <reply>"
         }
     },
 
-    langs: {
-        en: {
-            noPfp: "❌ No profile picture found.",
-            rateLimit: "⚠️ Instagram temporarily limited this profile request. Try again later.",
-            failed: "❌ Failed: %1"
-        }
-    },
-
-    onStart: async function ({
-        api,
-        event,
-        message,
-        getLang,
-        usersData
-    }) {
-        var targetID = "";
-
-        if (
-            event.messageReply &&
-            event.messageReply.senderID
-        ) {
-            targetID = String(event.messageReply.senderID);
-        } else {
-            targetID = String(
-                event.senderID ||
-                event.userID ||
-                ""
-            );
-        }
-
-        if (!targetID) {
-            return message.reply(
-                getLang("failed", "user ID not found")
-            );
-        }
+    onStart: async function ({ api, message, args, event, usersData }) {
+        let uid = event.senderID;
 
         try {
             /*
-             * First try cached user information.
+             * Priority:
+             * 1. Replied user's UID
+             * 2. Mentioned user's UID
+             * 3. Sender's UID
              */
-            var cached = null;
 
-            try {
-                if (usersData && usersData.get) {
-                    cached = await usersData.get(targetID);
-                }
-            } catch (_) {}
-
-            var url = null;
-
-            if (cached) {
-                url =
-                    cached.profilePicUrl ||
-                    cached.profile_pic_url ||
-                    cached.profilePictureUrl ||
-                    cached.profile_picture_url ||
-                    cached.avatarUrl ||
-                    cached.avatar_url ||
-                    null;
+            if (event.messageReply?.senderID) {
+                uid = event.messageReply.senderID;
+            } else if (
+                event.mentions &&
+                Object.keys(event.mentions).length > 0
+            ) {
+                uid = Object.keys(event.mentions)[0];
             }
 
-            /*
-             * Only request Instagram if cache has no PP URL.
-             */
-            if (!url) {
-                var info = await api.userInfo.getUserInfo(targetID);
-
-                if (!info) {
-                    return message.reply(
-                        getLang("noPfp")
-                    );
-                }
-
-                if (
-                    info.statusCode === 429 ||
-                    info.code === 429 ||
-                    (
-                        info.message &&
-                        String(info.message).indexOf("429") !== -1
-                    )
-                ) {
-                    return message.reply(
-                        getLang("rateLimit")
-                    );
-                }
-
-                if (
-                    info.profile_pic_url
-                ) {
-                    url =
-                        info.hd_profile_pic_url ||
-                        info.profile_pic_url;
-                }
+            if (!uid) {
+                return message.reply("❌ User ID পাওয়া যায়নি।");
             }
 
-            if (!url) {
-                return message.reply(
-                    getLang("noPfp")
-                );
-            }
-
-            await api.sendMessage(
-                {
-                    attachment: url
-                },
-                event.threadID,
-                event
+            api.setMessageReaction(
+                "⌛",
+                event.messageID,
+                () => {},
+                true
             );
 
-        } catch (e) {
-            console.error("[PFP]", e);
+            const baseUrl = await getBaseApiUrl();
 
-            var errorText =
-                e && e.message
-                    ? String(e.message)
-                    : "";
+            /*
+             * Original API
+             * /api/pfp?mahmud=UID
+             */
+            const pfpUrl =
+                `${baseUrl}/api/pfp?mahmud=${encodeURIComponent(uid)}`;
 
-            if (errorText.indexOf("429") !== -1) {
-                return message.reply(
-                    getLang("rateLimit")
-                );
+            const response = await axios.get(pfpUrl, {
+                responseType: "arraybuffer",
+                timeout: 15000,
+                headers: {
+                    "User-Agent": "Mozilla/5.0"
+                }
+            });
+
+            if (!response.data || response.data.length === 0) {
+                throw new Error("Empty profile picture response");
+            }
+
+            const cacheDir = path.join(__dirname, "cache");
+
+            if (!fs.existsSync(cacheDir)) {
+                fs.mkdirSync(cacheDir, { recursive: true });
+            }
+
+            const cachePath = path.join(
+                cacheDir,
+                `pp_${uid}_${Date.now()}.jpg`
+            );
+
+            fs.writeFileSync(cachePath, Buffer.from(response.data));
+
+            let userName = "User";
+
+            try {
+                if (usersData?.getName) {
+                    userName = await usersData.getName(uid);
+                }
+            } catch (_) {
+                // Name unavailable, use default
             }
 
             return message.reply(
-                getLang(
-                    "failed",
-                    errorText || "Unknown error"
-                )
+                {
+                    body: `> 🎀 ${userName}\n\n𝐇𝐞𝐫𝐞'𝐬 𝐲𝐨𝐮𝐫 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 𝐩𝐢𝐜𝐭𝐮𝐫𝐞 ✨`,
+                    attachment: fs.createReadStream(cachePath)
+                },
+                () => {
+                    api.setMessageReaction(
+                        "✅",
+                        event.messageID,
+                        () => {},
+                        true
+                    );
+
+                    setTimeout(() => {
+                        try {
+                            if (fs.existsSync(cachePath)) {
+                                fs.unlinkSync(cachePath);
+                            }
+                        } catch (_) {}
+                    }, 1000);
+                }
+            );
+
+        } catch (error) {
+            console.error("[PP ERROR]", error);
+
+            api.setMessageReaction(
+                "❌",
+                event.messageID,
+                () => {},
+                true
+            );
+
+            return message.reply(
+                "❌ Profile picture আনতে সমস্যা হয়েছে। API হয়তো বর্তমানে unavailable।"
             );
         }
     }
