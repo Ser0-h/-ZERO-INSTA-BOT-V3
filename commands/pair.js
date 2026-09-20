@@ -2,23 +2,21 @@ const { createCanvas, loadImage } = require("@napi-rs/canvas");
 const fs = require("fs");
 const path = require("path");
 
-// ===============================
-// PAIR TEMPLATE
-// ===============================
 const TEMPLATE_URL = "https://files.catbox.moe/bfonlm.jpg";
 
 const DEFAULT_AVATAR =
   "https://i.imgur.com/6VBx3io.png";
 
-// ===============================
-// FETCH BUFFER
-// ===============================
-async function fetchBuffer(url, timeout = 10000) {
+/* =========================================
+   FETCH
+========================================= */
+
+async function fetchBuffer(url, timeout = 12000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const response = await fetch(url, {
+    const res = await fetch(url, {
       signal: controller.signal,
       headers: {
         "User-Agent":
@@ -26,100 +24,262 @@ async function fetchBuffer(url, timeout = 10000) {
       }
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
     }
 
-    return Buffer.from(await response.arrayBuffer());
+    return Buffer.from(await res.arrayBuffer());
   } finally {
     clearTimeout(timer);
   }
 }
 
-// ===============================
-// LOAD IMAGE
-// ===============================
-async function loadRemoteImage(url) {
-  try {
-    const buffer = await fetchBuffer(url);
-    return await loadImage(buffer);
-  } catch (error) {
-    console.log("[PAIR] Image load failed:", error.message);
+/* =========================================
+   DEEP SEARCH
+   API response structure যাই হোক খুঁজবে
+========================================= */
 
-    const buffer = await fetchBuffer(DEFAULT_AVATAR);
-    return await loadImage(buffer);
+function deepFind(obj, keys, depth = 0) {
+  if (!obj || depth > 6) return null;
+
+  if (typeof obj !== "object") return null;
+
+  for (const key of keys) {
+    if (
+      Object.prototype.hasOwnProperty.call(obj, key) &&
+      obj[key] != null
+    ) {
+      const value = obj[key];
+
+      if (
+        typeof value === "string" ||
+        typeof value === "number"
+      ) {
+        return String(value);
+      }
+    }
   }
+
+  for (const key of Object.keys(obj)) {
+    try {
+      const result = deepFind(
+        obj[key],
+        keys,
+        depth + 1
+      );
+
+      if (result) return result;
+    } catch {}
+  }
+
+  return null;
 }
 
-// ===============================
-// GET USER INFO
-// ===============================
-async function getUser(api, userID) {
+/* =========================================
+   GET USER DATA
+========================================= */
+
+async function getUserData(api, userID) {
   try {
-    const data = await api.getUserInfo(userID);
+    const response = await api.getUserInfo(userID);
 
-    // Different API structures support
-    const user =
-      data?.user ||
-      data?.data?.user ||
-      data?.data ||
-      data ||
-      {};
+    console.log(
+      `[PAIR] getUserInfo(${userID}):`,
+      JSON.stringify(response)
+    );
 
-    const name =
-      user?.name ||
-      user?.fullName ||
-      user?.full_name ||
-      user?.username ||
-      user?.userName ||
-      `User ${userID}`;
+    /*
+      Different API naming support
+    */
 
-    const avatar =
-      user?.profilePicUrlHD ||
-      user?.profile_pic_url_hd ||
-      user?.profilePicUrl ||
-      user?.profile_pic_url ||
-      user?.avatar ||
-      user?.avatarUrl ||
-      user?.profilePicture ||
-      user?.profile_picture ||
-      null;
+    const name = deepFind(response, [
+      "name",
+      "fullName",
+      "full_name",
+      "username",
+      "userName",
+      "displayName",
+      "display_name"
+    ]);
+
+    const avatar = deepFind(response, [
+      "profilePicUrlHD",
+      "profile_pic_url_hd",
+      "profilePicUrl",
+      "profile_pic_url",
+      "profilePicture",
+      "profile_picture",
+      "profilePictureUrl",
+      "profile_picture_url",
+      "avatar",
+      "avatarUrl",
+      "avatar_url",
+      "photoUrl",
+      "photo_url",
+      "thumbSrc",
+      "thumb_src",
+      "thumbnailUrl",
+      "thumbnail_url"
+    ]);
 
     return {
-      id: userID,
-      name: String(name),
-      avatar
+      id: String(userID),
+
+      name:
+        name ||
+        `User ${userID}`,
+
+      avatar:
+        avatar || null
     };
+
   } catch (error) {
     console.log(
-      `[PAIR] getUserInfo failed for ${userID}:`,
+      `[PAIR] User info error ${userID}:`,
       error.message
     );
 
     return {
-      id: userID,
+      id: String(userID),
       name: `User ${userID}`,
       avatar: null
     };
   }
 }
 
-// ===============================
-// ROUND RECTANGLE
-// ===============================
-function roundedRect(ctx, x, y, w, h, r, color) {
+/* =========================================
+   LOAD IMAGE
+========================================= */
+
+async function getImage(url) {
+  try {
+    const buffer = await fetchBuffer(url);
+    return await loadImage(buffer);
+  } catch (error) {
+    console.log(
+      "[PAIR] Avatar load failed:",
+      error.message
+    );
+
+    const fallback =
+      await fetchBuffer(DEFAULT_AVATAR);
+
+    return await loadImage(fallback);
+  }
+}
+
+/* =========================================
+   CIRCLE IMAGE
+========================================= */
+
+function drawCircleImage(
+  ctx,
+  img,
+  cx,
+  cy,
+  size
+) {
   ctx.save();
 
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
+
+  ctx.arc(
+    cx,
+    cy,
+    size / 2,
+    0,
+    Math.PI * 2
+  );
+
+  ctx.closePath();
+  ctx.clip();
+
+  const scale = Math.max(
+    size / img.width,
+    size / img.height
+  );
+
+  const w = img.width * scale;
+  const h = img.height * scale;
+
+  ctx.drawImage(
+    img,
+    cx - w / 2,
+    cy - h / 2,
+    w,
+    h
+  );
+
+  ctx.restore();
+}
+
+/* =========================================
+   ROUND BOX
+========================================= */
+
+function roundRect(
+  ctx,
+  x,
+  y,
+  w,
+  h,
+  radius,
+  color
+) {
+  ctx.save();
+
+  ctx.beginPath();
+
+  ctx.moveTo(x + radius, y);
+
+  ctx.lineTo(
+    x + w - radius,
+    y
+  );
+
+  ctx.quadraticCurveTo(
+    x + w,
+    y,
+    x + w,
+    y + radius
+  );
+
+  ctx.lineTo(
+    x + w,
+    y + h - radius
+  );
+
+  ctx.quadraticCurveTo(
+    x + w,
+    y + h,
+    x + w - radius,
+    y + h
+  );
+
+  ctx.lineTo(
+    x + radius,
+    y + h
+  );
+
+  ctx.quadraticCurveTo(
+    x,
+    y + h,
+    x,
+    y + h - radius
+  );
+
+  ctx.lineTo(
+    x,
+    y + radius
+  );
+
+  ctx.quadraticCurveTo(
+    x,
+    y,
+    x + radius,
+    y
+  );
+
   ctx.closePath();
 
   ctx.fillStyle = color;
@@ -128,152 +288,128 @@ function roundedRect(ctx, x, y, w, h, r, color) {
   ctx.restore();
 }
 
-// ===============================
-// CIRCLE AVATAR
-// ===============================
-function drawCircleImage(ctx, img, cx, cy, size) {
-  const x = cx - size / 2;
-  const y = cy - size / 2;
+/* =========================================
+   DRAW NAME
+========================================= */
 
-  ctx.save();
+function drawName(
+  ctx,
+  name,
+  centerX,
+  centerY,
+  maxWidth
+) {
+  name = String(name || "Unknown")
+    .replace(/\s+/g, " ")
+    .trim();
 
-  ctx.beginPath();
-  ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.clip();
+  /*
+    Long name হলে font ছোট হবে
+  */
 
-  // Cover image properly inside circle
-  const scale = Math.max(
-    size / img.width,
-    size / img.height
-  );
+  let fontSize = 34;
 
-  const width = img.width * scale;
-  const height = img.height * scale;
+  while (
+    fontSize > 16
+  ) {
+    ctx.font =
+      `bold ${fontSize}px Arial`;
 
-  const dx = cx - width / 2;
-  const dy = cy - height / 2;
-
-  ctx.drawImage(img, dx, dy, width, height);
-
-  ctx.restore();
-}
-
-// ===============================
-// TEXT FIT
-// ===============================
-function fitFont(ctx, text, maxWidth, startSize) {
-  let size = startSize;
-
-  while (size > 12) {
-    ctx.font = `bold ${size}px Arial`;
-
-    if (ctx.measureText(text).width <= maxWidth) {
-      return size;
+    if (
+      ctx.measureText(name).width <=
+      maxWidth
+    ) {
+      break;
     }
 
-    size -= 1;
+    fontSize--;
   }
 
-  return 12;
-}
-
-// ===============================
-// DRAW NAME
-// ===============================
-function drawName(ctx, name, x, y, width, height, scale) {
-  const cleanName = String(name)
-    .replace(/\s+/g, " ")
-    .trim()
-    .toUpperCase();
-
-  const maxWidth = width * 0.86;
-
-  // Try one line first
-  let fontSize = fitFont(
-    ctx,
-    cleanName,
-    maxWidth,
-    32 * scale
-  );
-
+  ctx.fillStyle = "#111111";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#171717";
 
-  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.font =
+    `bold ${fontSize}px Arial`;
 
-  if (ctx.measureText(cleanName).width <= maxWidth) {
+  /*
+    One line
+  */
+
+  if (
+    ctx.measureText(name).width <=
+    maxWidth
+  ) {
     ctx.fillText(
-      cleanName,
-      x + width / 2,
-      y + height / 2
+      name.toUpperCase(),
+      centerX,
+      centerY
     );
+
     return;
   }
 
-  // Two-line fallback
-  const words = cleanName.split(" ");
+  /*
+    Two line
+  */
+
+  const words =
+    name.split(" ");
 
   let line1 = "";
   let line2 = "";
 
   for (const word of words) {
     const test =
-      line1.length === 0
-        ? word
-        : `${line1} ${word}`;
-
-    ctx.font = `bold ${fontSize}px Arial`;
+      line1
+        ? `${line1} ${word}`
+        : word;
 
     if (
-      ctx.measureText(test).width <= maxWidth &&
-      line2.length === 0
+      ctx.measureText(test).width <=
+      maxWidth
     ) {
       line1 = test;
     } else {
       line2 +=
-        line2.length === 0
-          ? word
-          : ` ${word}`;
+        line2
+          ? ` ${word}`
+          : word;
     }
   }
 
-  // If second line is still too large, reduce it
-  while (
-    fontSize > 12 &&
-    ctx.measureText(line2).width > maxWidth
-  ) {
-    fontSize -= 1;
-    ctx.font = `bold ${fontSize}px Arial`;
-  }
-
-  const lineHeight = fontSize * 1.05;
+  const lineHeight =
+    fontSize * 1.05;
 
   ctx.fillText(
-    line1,
-    x + width / 2,
-    y + height / 2 - lineHeight / 2
+    line1.toUpperCase(),
+    centerX,
+    centerY - lineHeight / 2
   );
 
   ctx.fillText(
-    line2,
-    x + width / 2,
-    y + height / 2 + lineHeight / 2
+    line2.toUpperCase(),
+    centerX,
+    centerY + lineHeight / 2
   );
 }
 
-// ===============================
-// COMMAND
-// ===============================
+/* =========================================
+   COMMAND
+========================================= */
+
 module.exports = {
+
   config: {
     name: "pair",
     aliases: ["pair"],
+
     author: "Idle×Saow",
+
     category: "love",
 
     cooldown: 5,
+
     role: 0,
 
     usePrefix: true,
@@ -292,153 +428,211 @@ module.exports = {
     event,
     api
   }) {
+
     try {
+
+      /* =====================================
+         SENDER
+      ===================================== */
+
+      const senderID =
+        String(
+          event.senderID ||
+          event.userID ||
+          message.senderID
+        );
+
       const threadID =
         event.threadID ||
         event.chat_id;
 
-      const senderID =
-        event.senderID ||
-        event.userID ||
-        message.senderID;
-
-      if (!threadID || !senderID) {
+      if (!senderID) {
         return message.reply(
-          "❌ User information পাওয়া যায়নি!"
+          "❌ User ID পাওয়া যায়নি!"
         );
       }
 
-      // ===============================
-      // GET GROUP MEMBERS
-      // ===============================
+      /* =====================================
+         THREAD INFO
+      ===================================== */
+
       let threadInfo;
 
       try {
+
         threadInfo =
-          await api.getThreadInfo(threadID);
+          await api.getThreadInfo(
+            threadID
+          );
+
       } catch (error) {
+
         console.log(
-          "[PAIR] Thread info error:",
+          "[PAIR] Thread error:",
           error.message
         );
 
         return message.reply(
-          "❌ Group member list পাওয়া যাচ্ছে না!"
+          "❌ Group information পাওয়া যাচ্ছে না!"
         );
       }
 
-      let participantIDs = [];
+      /* =====================================
+         PARTICIPANTS
+      ===================================== */
 
-      // participantIDs = ["123", "456"]
-      if (Array.isArray(threadInfo?.participantIDs)) {
-        participantIDs =
-          threadInfo.participantIDs.map(String);
-      }
+      let members = [];
 
-      // participants = [{userID:"123"}, ...]
-      else if (Array.isArray(threadInfo?.participants)) {
-        participantIDs =
+      if (
+        Array.isArray(
+          threadInfo?.participantIDs
+        )
+      ) {
+
+        members =
+          threadInfo.participantIDs
+            .map(String);
+
+      } else if (
+        Array.isArray(
+          threadInfo?.participants
+        )
+      ) {
+
+        members =
           threadInfo.participants
             .map(user => {
-              if (typeof user === "string") {
+
+              if (
+                typeof user === "string"
+              ) {
                 return user;
               }
 
               return (
                 user?.userID ||
                 user?.id ||
+                user?.uid ||
                 user?.participantID
               );
+
             })
             .filter(Boolean)
             .map(String);
       }
 
-      // Remove duplicates
-      participantIDs = [
-        ...new Set(participantIDs)
+      members = [
+        ...new Set(members)
       ];
 
-      // ===============================
-      // GROUP CHECK
-      // ===============================
-      if (participantIDs.length < 2) {
+      /* =====================================
+         GROUP CHECK
+      ===================================== */
+
+      if (members.length < 2) {
+
         return message.reply(
           "❌ Ei command ti shudhu group chat-e kaj korbe!"
         );
       }
 
-      // ===============================
-      // REMOVE COMMAND USER
-      // ===============================
-      const senderIDString =
-        String(senderID);
+      /* =====================================
+         REMOVE COMMAND USER
+      ===================================== */
 
-      const otherMembers =
-        participantIDs.filter(
-          id => id !== senderIDString
+      const possiblePartners =
+        members.filter(
+          id =>
+            String(id) !==
+            String(senderID)
         );
 
-      if (!otherMembers.length) {
+      if (
+        possiblePartners.length === 0
+      ) {
+
         return message.reply(
           "❌ Pair korar moto kono member nei!"
         );
       }
 
-      // ===============================
-      // RANDOM PARTNER
-      // ===============================
-      const randomPartnerID =
-        otherMembers[
+      /* =====================================
+         RANDOM PARTNER
+      ===================================== */
+
+      const partnerID =
+        possiblePartners[
           Math.floor(
             Math.random() *
-            otherMembers.length
+            possiblePartners.length
           )
         ];
 
-      // ===============================
-      // GET BOTH USER DATA
-      // ===============================
-      const [sender, partner] =
-        await Promise.all([
-          getUser(api, senderIDString),
-          getUser(api, randomPartnerID)
-        ]);
+      /* =====================================
+         GET ACTUAL USER DATA
+      ===================================== */
+
+      const [
+        sender,
+        partner
+      ] = await Promise.all([
+
+        getUserData(
+          api,
+          senderID
+        ),
+
+        getUserData(
+          api,
+          partnerID
+        )
+
+      ]);
 
       console.log(
-        "[PAIR] Sender:",
+        "[PAIR] FINAL SENDER:",
         sender
       );
 
       console.log(
-        "[PAIR] Partner:",
+        "[PAIR] FINAL PARTNER:",
         partner
       );
 
-      // ===============================
-      // AVATARS
-      // ===============================
-      const [senderAvatar, partnerAvatar] =
-        await Promise.all([
-          loadRemoteImage(
-            sender.avatar ||
-            DEFAULT_AVATAR
-          ),
+      /* =====================================
+         GET PROFILE PICTURES
+      ===================================== */
 
-          loadRemoteImage(
-            partner.avatar ||
-            DEFAULT_AVATAR
-          )
-        ]);
+      const [
+        senderAvatar,
+        partnerAvatar
+      ] = await Promise.all([
 
-      // ===============================
-      // TEMPLATE
-      // ===============================
+        getImage(
+          sender.avatar ||
+          DEFAULT_AVATAR
+        ),
+
+        getImage(
+          partner.avatar ||
+          DEFAULT_AVATAR
+        )
+
+      ]);
+
+      /* =====================================
+         TEMPLATE
+      ===================================== */
+
       const templateBuffer =
-        await fetchBuffer(TEMPLATE_URL);
+        await fetchBuffer(
+          TEMPLATE_URL
+        );
 
       const template =
-        await loadImage(templateBuffer);
+        await loadImage(
+          templateBuffer
+        );
 
       const canvas =
         createCanvas(
@@ -457,158 +651,175 @@ module.exports = {
         canvas.height
       );
 
-      // ===============================
-      // SCALE
-      // Template original ≈ 1018 x 1536
-      // ===============================
-      const scaleX =
+      /*
+        Template = 1018 x 1536
+      */
+
+      const sx =
         canvas.width / 1018;
 
-      const scaleY =
+      const sy =
         canvas.height / 1536;
 
-      const scale =
-        Math.min(scaleX, scaleY);
+      /* =====================================
+         PROFILE PICTURES
+      ===================================== */
 
-      // ===============================
-      // AVATAR POSITION
-      // ===============================
-      // Left frame center
-      const leftCX =
-        317 * scaleX;
-
-      const leftCY =
-        935 * scaleY;
-
-      // Right frame center
-      const rightCX =
-        705 * scaleX;
-
-      const rightCY =
-        935 * scaleY;
+      /*
+        Frame-এর ভিতরের exact center
+      */
 
       const avatarSize =
-        285 * scale;
+        260 * Math.min(
+          sx,
+          sy
+        );
+
+      const leftX =
+        307 * sx;
+
+      const rightX =
+        711 * sx;
+
+      const avatarY =
+        933 * sy;
 
       drawCircleImage(
         ctx,
         senderAvatar,
-        leftCX,
-        leftCY,
+        leftX,
+        avatarY,
         avatarSize
       );
 
       drawCircleImage(
         ctx,
         partnerAvatar,
-        rightCX,
-        rightCY,
+        rightX,
+        avatarY,
         avatarSize
       );
 
-      // ===============================
-      // COVER OLD NAMES
-      // ===============================
-      const nameY =
-        1165 * scaleY;
+      /* =====================================
+         NAME BOX
+      ===================================== */
 
-      const nameH =
-        145 * scaleY;
+      /*
+        Existing names cover
+      */
 
-      const leftNameX =
-        118 * scaleX;
+      const boxY =
+        1168 * sy;
 
-      const rightNameX =
-        527 * scaleX;
+      const boxH =
+        142 * sy;
 
-      const nameW =
-        373 * scaleX;
+      const boxW =
+        375 * sx;
 
-      roundedRect(
+      const leftBoxX =
+        118 * sx;
+
+      const rightBoxX =
+        525 * sx;
+
+      /*
+        Existing name area cover
+      */
+
+      roundRect(
         ctx,
-        leftNameX,
-        nameY,
-        nameW,
-        nameH,
-        30 * scale,
+        leftBoxX,
+        boxY,
+        boxW,
+        boxH,
+        28 * Math.min(sx, sy),
         "#F2EFF6"
       );
 
-      roundedRect(
+      roundRect(
         ctx,
-        rightNameX,
-        nameY,
-        nameW,
-        nameH,
-        30 * scale,
+        rightBoxX,
+        boxY,
+        boxW,
+        boxH,
+        28 * Math.min(sx, sy),
         "#F2EFF6"
       );
 
-      // ===============================
-      // DRAW DYNAMIC NAMES
-      // ===============================
+      /* =====================================
+         ACTUAL NAMES
+      ===================================== */
+
       drawName(
         ctx,
         sender.name,
-        leftNameX,
-        nameY,
-        nameW,
-        nameH,
-        scale
+        leftBoxX + boxW / 2,
+        boxY + boxH / 2,
+        boxW * 0.88
       );
 
       drawName(
         ctx,
         partner.name,
-        rightNameX,
-        nameY,
-        nameW,
-        nameH,
-        scale
+        rightBoxX + boxW / 2,
+        boxY + boxH / 2,
+        boxW * 0.88
       );
 
-      // ===============================
-      // RANDOM COMPATIBILITY
-      // 60 - 100%
-      // ===============================
-      const compatibility =
+      /* =====================================
+         RANDOM PERCENTAGE
+      ===================================== */
+
+      const percentage =
         Math.floor(
           Math.random() * 41
         ) + 60;
 
-      // ===============================
-      // COVER OLD COMPATIBILITY
-      // ===============================
-      roundedRect(
+      /* =====================================
+         COMPATIBILITY
+      ===================================== */
+
+      const compatibilityY =
+        1408 * sy;
+
+      /*
+        পুরোনো percentage-এর উপর
+        হালকা transparent box
+      */
+
+      roundRect(
         ctx,
-        95 * scaleX,
-        1360 * scaleY,
-        830 * scaleX,
-        105 * scaleY,
-        25 * scale,
-        "rgba(232, 218, 237, 0.96)"
+        95 * sx,
+        1360 * sy,
+        830 * sx,
+        105 * sy,
+        20 * Math.min(sx, sy),
+        "rgba(232, 218, 237, 0.92)"
       );
 
-      // ===============================
-      // NEW COMPATIBILITY
-      // ===============================
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
+      ctx.fillStyle =
+        "#171717";
+
+      ctx.textAlign =
+        "center";
+
+      ctx.textBaseline =
+        "middle";
 
       ctx.font =
-        `bold ${42 * scale}px Georgia`;
-
-      ctx.fillStyle = "#171717";
+        `bold ${40 * Math.min(sx, sy)}px Georgia`;
 
       ctx.fillText(
-        `→ COMPATIBILITY: ${compatibility}% 💘`,
+        `→ COMPATIBILITY: ${percentage}% 💘`,
         canvas.width / 2,
-        1410 * scaleY
+        compatibilityY
       );
 
-      // ===============================
-      // SAVE
-      // ===============================
+      /* =====================================
+         SAVE
+      ===================================== */
+
       const cacheDir =
         path.join(
           __dirname,
@@ -618,7 +829,9 @@ module.exports = {
       if (!fs.existsSync(cacheDir)) {
         fs.mkdirSync(
           cacheDir,
-          { recursive: true }
+          {
+            recursive: true
+          }
         );
       }
 
@@ -633,31 +846,46 @@ module.exports = {
         canvas.toBuffer("image/png")
       );
 
-      // ===============================
-      // SEND
-      // ===============================
+      /* =====================================
+         SEND
+      ===================================== */
+
       await message.reply({
         body:
           `💘 MATCHMAKING COMPLETE 💘\n\n` +
           `👤 ${sender.name} × ${partner.name}\n` +
-          `✨ Compatibility: ${compatibility}%`,
+          `✨ Compatibility: ${percentage}%`,
 
         attachment:
-          fs.createReadStream(outputPath)
+          fs.createReadStream(
+            outputPath
+          )
       });
 
-      // ===============================
-      // DELETE CACHE
-      // ===============================
+      /* =====================================
+         DELETE CACHE
+      ===================================== */
+
       setTimeout(() => {
+
         try {
-          if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath);
+
+          if (
+            fs.existsSync(
+              outputPath
+            )
+          ) {
+            fs.unlinkSync(
+              outputPath
+            );
           }
-        } catch (e) {}
+
+        } catch {}
+
       }, 15000);
 
     } catch (error) {
+
       console.error(
         "[PAIR ERROR]",
         error
