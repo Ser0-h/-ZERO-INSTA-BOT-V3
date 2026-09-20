@@ -12,7 +12,11 @@
     "test": "node test/run.js",
     "test:live": "node test/live-send.js"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.44",
+    "axios": "^1.6.0",
+    "fs-extra": "^11.1.0"
+  },
   "author": "Saifullah Al Neoaz",
   "contributors": [
     "Saifullah Al Neoaz (https://github.com/lazyneoaz)"
