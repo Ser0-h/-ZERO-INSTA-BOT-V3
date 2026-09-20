@@ -1,17 +1,15 @@
-const { createCanvas, loadImage } = require('canvas');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const axios = require('axios');
 const fs = require('fs-extra');
 const path = require('path');
 
 /**
  * Instagram Profile Picture Fetcher API Helper
- * User ID ba Username diye HD profile picture download korbe
  */
 async function getInstagramAvatar(userID, username = "") {
   const defaultAvatar = 'https://i.imgur.com/6VBx3io.png';
   
   try {
-    // Method 1: Username diye HD Profile Picture fetch API
     if (username) {
       const response = await axios.get(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`, {
         headers: {
@@ -24,10 +22,8 @@ async function getInstagramAvatar(userID, username = "") {
       if (hdPicUrl) return hdPicUrl;
     }
 
-    // Method 2: Public Proxy / Avatar Endpoint
     if (userID) {
-      const proxyUrl = `https://graph.facebook.com/${userID}/picture?height=720&width=720&access_token=6628568379%7Cc1e620fa708a1d5696fb991c1bde5662`;
-      return proxyUrl;
+      return `https://graph.facebook.com/${userID}/picture?height=720&width=720&access_token=6628568379%7Cc1e620fa708a1d5696fb991c1bde5662`;
     }
   } catch (error) {
     console.error("Avatar API Fetch Error:", error.message);
@@ -41,7 +37,7 @@ module.exports = {
     name: "pair",
     aliases: ["pair"],
     author: "idle×Saow",
-    category: "fun",
+    category: "love",
     cooldown: 5,
     role: 0,
     usePrefix: true,
@@ -54,30 +50,25 @@ module.exports = {
       const threadID = event.threadID || event.chat_id;
       const senderID = event.senderID || message.senderID;
 
-      // Group info & member list fetching
       let threadInfo = await api.getThreadInfo(threadID).catch(() => null);
       let participantIDs = threadInfo ? threadInfo.participantIDs : [];
 
       if (!participantIDs || participantIDs.length < 2) {
-        return message.reply(`❌ Eita shudhu group chat (GC)-e kaj korbe ebong minimum 2 jon member thaktek hobe!\nUsage: ${prefix}pair`);
+        return message.reply(`❌ এই কমান্ডটি শুধু গ্রুপ চ্যাটে (GC) কাজ করবে এবং কমপক্ষে ২ জন মেম্বার থাকতে হবে!\nব্যবহার পদ্ধতি: ${prefix}pair`);
       }
 
-      // Filter sender out to pick a random partner
       let otherMembers = participantIDs.filter(id => id !== senderID);
       let randomPartnerID = otherMembers[Math.floor(Math.random() * otherMembers.length)];
 
-      // Fetch user data from database
       let senderInfo = await usersData.get(senderID).catch(() => null) || {};
       let partnerInfo = await usersData.get(randomPartnerID).catch(() => null) || {};
 
       let senderName = senderInfo.name || "User";
       let partnerName = partnerInfo.name || "Partner";
 
-      // Call Avatar API for both users
       let senderAvatarUrl = await getInstagramAvatar(senderID, senderInfo.username);
       let partnerAvatarUrl = await getInstagramAvatar(randomPartnerID, partnerInfo.username);
 
-      // Download images helper
       const fetchImage = async (url) => {
         try {
           const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 8000 });
@@ -87,27 +78,29 @@ module.exports = {
         }
       };
 
-      // Template path
-      const templatePath = path.join(__dirname, 'cache', 'pair_template.png');
+      // Cache folder auto creation
+      const cacheDir = path.join(__dirname, 'cache');
+      if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
+      }
+
+      const templatePath = path.join(cacheDir, 'pair_template.png');
 
       if (!fs.existsSync(templatePath)) {
-        return message.reply("⚠️ Banner template 'cache/pair_template.png' folder-e paowa jayni!");
+        return message.reply("⚠️ Banner template 'cache/pair_template.png' পাওয়া যায়নি!");
       }
 
       const templateImg = await loadImage(templatePath);
       const canvas = createCanvas(templateImg.width, templateImg.height);
       const ctx = canvas.getContext('2d');
 
-      // Draw background
       ctx.drawImage(templateImg, 0, 0, canvas.width, canvas.height);
 
-      // Fetch profile pictures using API
       const [senderAvatar, partnerAvatar] = await Promise.all([
         fetchImage(senderAvatarUrl),
         fetchImage(partnerAvatarUrl)
       ]);
 
-      // Draw round profile picture function
       const drawCircularImage = (img, x, y, size) => {
         ctx.save();
         ctx.beginPath();
@@ -118,18 +111,15 @@ module.exports = {
         ctx.restore();
       };
 
-      // Positions & Dimensions
       const avatarSize = 220;
-      const leftX = 145;  // Command sender (Left)
+      const leftX = 145;
       const leftY = 485;
-      const rightX = 535; // Random member (Right)
+      const rightX = 535;
       const rightY = 485;
 
-      // Draw avatars
       drawCircularImage(senderAvatar, leftX, leftY, avatarSize);
       drawCircularImage(partnerAvatar, rightX, rightY, avatarSize);
 
-      // Draw names
       ctx.fillStyle = '#1A1A1A';
       ctx.textAlign = 'center';
       ctx.font = 'bold 26px Arial';
@@ -137,28 +127,24 @@ module.exports = {
       ctx.fillText(senderName.toUpperCase(), leftX + avatarSize / 2, leftY + avatarSize + 115);
       ctx.fillText(partnerName.toUpperCase(), rightX + avatarSize / 2, rightY + avatarSize + 115);
 
-      // Save output image
-      const outputPath = path.join(__dirname, 'cache', `pair_${senderID}.png`);
+      const outputPath = path.join(cacheDir, `pair_${senderID}.png`);
       const buffer = canvas.toBuffer('image/png');
       await fs.writeFile(outputPath, buffer);
 
-      // Random Compatibility (60% - 100%)
       const compatibility = Math.floor(Math.random() * 41) + 60;
 
-      // Send result
       await message.reply({
         body: `💘 MATCHMAKING COMPLETE 💘\n\n👤 ${senderName} × ${partnerName}\n✨ Compatibility: ${compatibility}%`,
         attachment: fs.createReadStream(outputPath)
       });
 
-      // Cleanup
       setTimeout(() => {
         if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
       }, 10000);
 
     } catch (error) {
       console.error(error);
-      return message.reply("Pair banner generate korte problem hoyeche: " + error.message);
+      return message.reply("Pair banner generate করতে সমস্যা হয়েছে: " + error.message);
     }
   }
 };
