@@ -1,203 +1,671 @@
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const axios = require('axios');
-const fs = require('fs-extra');
-const path = require('path');
+const { createCanvas, loadImage } = require("@napi-rs/canvas");
+const fs = require("fs");
+const path = require("path");
 
-// 🔗 Catbox Template JPG URL
-const CATBOX_TEMPLATE_URL = "https://files.catbox.moe/bfonlm.jpg";
+// ===============================
+// PAIR TEMPLATE
+// ===============================
+const TEMPLATE_URL = "https://files.catbox.moe/bfonlm.jpg";
 
-/**
- * Avatar Fetcher Helper
- */
-async function getAvatarUrl(userID, username = "") {
-  const defaultAvatar = 'https://i.imgur.com/6VBx3io.png';
+const DEFAULT_AVATAR =
+  "https://i.imgur.com/6VBx3io.png";
+
+// ===============================
+// FETCH BUFFER
+// ===============================
+async function fetchBuffer(url, timeout = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
   try {
-    if (username) {
-      const response = await axios.get(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'x-ig-app-id': '936619743392459'
-        },
-        timeout: 5000
-      });
-      const hdPicUrl = response.data?.data?.user?.profile_pic_url_hd || response.data?.data?.user?.profile_pic_url;
-      if (hdPicUrl) return hdPicUrl;
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
 
-    if (userID) {
-      return `https://graph.facebook.com/${userID}/picture?height=720&width=720&access_token=6628568379%7Cc1e620fa708a1d5696fb991c1bde5662`;
-    }
-  } catch (error) {
-    console.error("Avatar Fetch Error:", error.message);
+    return Buffer.from(await response.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
   }
-  return defaultAvatar;
 }
 
-/**
- * Rounded Rectangle Drawer (Purano Name Box Dhakar Jonno)
- */
-function drawRoundedRect(ctx, x, y, width, height, radius, fillStyle) {
+// ===============================
+// LOAD IMAGE
+// ===============================
+async function loadRemoteImage(url) {
+  try {
+    const buffer = await fetchBuffer(url);
+    return await loadImage(buffer);
+  } catch (error) {
+    console.log("[PAIR] Image load failed:", error.message);
+
+    const buffer = await fetchBuffer(DEFAULT_AVATAR);
+    return await loadImage(buffer);
+  }
+}
+
+// ===============================
+// GET USER INFO
+// ===============================
+async function getUser(api, userID) {
+  try {
+    const data = await api.getUserInfo(userID);
+
+    // Different API structures support
+    const user =
+      data?.user ||
+      data?.data?.user ||
+      data?.data ||
+      data ||
+      {};
+
+    const name =
+      user?.name ||
+      user?.fullName ||
+      user?.full_name ||
+      user?.username ||
+      user?.userName ||
+      `User ${userID}`;
+
+    const avatar =
+      user?.profilePicUrlHD ||
+      user?.profile_pic_url_hd ||
+      user?.profilePicUrl ||
+      user?.profile_pic_url ||
+      user?.avatar ||
+      user?.avatarUrl ||
+      user?.profilePicture ||
+      user?.profile_picture ||
+      null;
+
+    return {
+      id: userID,
+      name: String(name),
+      avatar
+    };
+  } catch (error) {
+    console.log(
+      `[PAIR] getUserInfo failed for ${userID}:`,
+      error.message
+    );
+
+    return {
+      id: userID,
+      name: `User ${userID}`,
+      avatar: null
+    };
+  }
+}
+
+// ===============================
+// ROUND RECTANGLE
+// ===============================
+function roundedRect(ctx, x, y, w, h, r, color) {
   ctx.save();
+
   ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
-  ctx.fillStyle = fillStyle;
+
+  ctx.fillStyle = color;
   ctx.fill();
+
   ctx.restore();
 }
 
-/**
- * Circular Avatar Drawer
- */
-function drawCircularImage(ctx, img, x, y, size) {
+// ===============================
+// CIRCLE AVATAR
+// ===============================
+function drawCircleImage(ctx, img, cx, cy, size) {
+  const x = cx - size / 2;
+  const y = cy - size / 2;
+
   ctx.save();
+
   ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2, true);
+  ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
   ctx.closePath();
   ctx.clip();
-  ctx.drawImage(img, x, y, size, size);
+
+  // Cover image properly inside circle
+  const scale = Math.max(
+    size / img.width,
+    size / img.height
+  );
+
+  const width = img.width * scale;
+  const height = img.height * scale;
+
+  const dx = cx - width / 2;
+  const dy = cy - height / 2;
+
+  ctx.drawImage(img, dx, dy, width, height);
+
   ctx.restore();
 }
 
+// ===============================
+// TEXT FIT
+// ===============================
+function fitFont(ctx, text, maxWidth, startSize) {
+  let size = startSize;
+
+  while (size > 12) {
+    ctx.font = `bold ${size}px Arial`;
+
+    if (ctx.measureText(text).width <= maxWidth) {
+      return size;
+    }
+
+    size -= 1;
+  }
+
+  return 12;
+}
+
+// ===============================
+// DRAW NAME
+// ===============================
+function drawName(ctx, name, x, y, width, height, scale) {
+  const cleanName = String(name)
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+
+  const maxWidth = width * 0.86;
+
+  // Try one line first
+  let fontSize = fitFont(
+    ctx,
+    cleanName,
+    maxWidth,
+    32 * scale
+  );
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#171717";
+
+  ctx.font = `bold ${fontSize}px Arial`;
+
+  if (ctx.measureText(cleanName).width <= maxWidth) {
+    ctx.fillText(
+      cleanName,
+      x + width / 2,
+      y + height / 2
+    );
+    return;
+  }
+
+  // Two-line fallback
+  const words = cleanName.split(" ");
+
+  let line1 = "";
+  let line2 = "";
+
+  for (const word of words) {
+    const test =
+      line1.length === 0
+        ? word
+        : `${line1} ${word}`;
+
+    ctx.font = `bold ${fontSize}px Arial`;
+
+    if (
+      ctx.measureText(test).width <= maxWidth &&
+      line2.length === 0
+    ) {
+      line1 = test;
+    } else {
+      line2 +=
+        line2.length === 0
+          ? word
+          : ` ${word}`;
+    }
+  }
+
+  // If second line is still too large, reduce it
+  while (
+    fontSize > 12 &&
+    ctx.measureText(line2).width > maxWidth
+  ) {
+    fontSize -= 1;
+    ctx.font = `bold ${fontSize}px Arial`;
+  }
+
+  const lineHeight = fontSize * 1.05;
+
+  ctx.fillText(
+    line1,
+    x + width / 2,
+    y + height / 2 - lineHeight / 2
+  );
+
+  ctx.fillText(
+    line2,
+    x + width / 2,
+    y + height / 2 + lineHeight / 2
+  );
+}
+
+// ===============================
+// COMMAND
+// ===============================
 module.exports = {
   config: {
     name: "pair",
     aliases: ["pair"],
-    author: "idle×Saow",
+    author: "Idle×Saow",
     category: "love",
+
     cooldown: 5,
     role: 0,
+
     usePrefix: true,
-    description: { en: "Pair with a random group member" },
-    usage: { en: "{p}pair" }
+
+    description: {
+      en: "Pair with a random group member"
+    },
+
+    usage: {
+      en: "{p}pair"
+    }
   },
 
-  onStart: async function ({ message, event, api, usersData, prefix }) {
+  onStart: async function ({
+    message,
+    event,
+    api
+  }) {
     try {
-      const threadID = event.threadID || event.chat_id;
-      const senderID = event.senderID || message.senderID;
+      const threadID =
+        event.threadID ||
+        event.chat_id;
 
-      let threadInfo = null;
+      const senderID =
+        event.senderID ||
+        event.userID ||
+        message.senderID;
+
+      if (!threadID || !senderID) {
+        return message.reply(
+          "❌ User information পাওয়া যায়নি!"
+        );
+      }
+
+      // ===============================
+      // GET GROUP MEMBERS
+      // ===============================
+      let threadInfo;
+
       try {
-        threadInfo = await api.getThreadInfo(threadID);
-      } catch (e) {
-        threadInfo = null;
+        threadInfo =
+          await api.getThreadInfo(threadID);
+      } catch (error) {
+        console.log(
+          "[PAIR] Thread info error:",
+          error.message
+        );
+
+        return message.reply(
+          "❌ Group member list পাওয়া যাচ্ছে না!"
+        );
       }
 
-      let participantIDs = threadInfo ? (threadInfo.participantIDs || threadInfo.participants) : [];
+      let participantIDs = [];
 
-      if (!participantIDs || participantIDs.length < 2) {
-        return message.reply(`❌ Ei command ti shudhu group chat (GC)-e kaj korbe!\nUsage: ${prefix}pair`);
+      // participantIDs = ["123", "456"]
+      if (Array.isArray(threadInfo?.participantIDs)) {
+        participantIDs =
+          threadInfo.participantIDs.map(String);
       }
 
-      // Random Partner Pick
-      let otherMembers = participantIDs.filter(id => id !== senderID);
-      let randomPartnerID = otherMembers[Math.floor(Math.random() * otherMembers.length)];
+      // participants = [{userID:"123"}, ...]
+      else if (Array.isArray(threadInfo?.participants)) {
+        participantIDs =
+          threadInfo.participants
+            .map(user => {
+              if (typeof user === "string") {
+                return user;
+              }
 
-      // Get Users Info
-      let senderInfo = {};
-      let partnerInfo = {};
-
-      try { senderInfo = (await usersData.get(senderID)) || {}; } catch (e) { senderInfo = {}; }
-      try { partnerInfo = (await usersData.get(randomPartnerID)) || {}; } catch (e) { partnerInfo = {}; }
-
-      let senderName = senderInfo.name || senderInfo.username || "Sender";
-      let partnerName = partnerInfo.name || partnerInfo.username || "Partner";
-
-      // Fetch Avatars
-      let senderAvatarUrl = await getAvatarUrl(senderID, senderInfo.username);
-      let partnerAvatarUrl = await getAvatarUrl(randomPartnerID, partnerInfo.username);
-
-      const fetchImage = async (url) => {
-        try {
-          const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 8000 });
-          return await loadImage(Buffer.from(res.data));
-        } catch (e) {
-          return await loadImage('https://i.imgur.com/6VBx3io.png');
-        }
-      };
-
-      // Download Template
-      let templateImg;
-      try {
-        const templateRes = await axios.get(CATBOX_TEMPLATE_URL, { responseType: 'arraybuffer', timeout: 10000 });
-        templateImg = await loadImage(Buffer.from(templateRes.data));
-      } catch (err) {
-        return message.reply("❌ Template image download korte somossa hoyeche!");
+              return (
+                user?.userID ||
+                user?.id ||
+                user?.participantID
+              );
+            })
+            .filter(Boolean)
+            .map(String);
       }
 
-      const canvas = createCanvas(templateImg.width, templateImg.height);
-      const ctx = canvas.getContext('2d');
+      // Remove duplicates
+      participantIDs = [
+        ...new Set(participantIDs)
+      ];
 
-      // Draw Background
-      ctx.drawImage(templateImg, 0, 0, canvas.width, canvas.height);
+      // ===============================
+      // GROUP CHECK
+      // ===============================
+      if (participantIDs.length < 2) {
+        return message.reply(
+          "❌ Ei command ti shudhu group chat-e kaj korbe!"
+        );
+      }
 
-      const [senderAvatar, partnerAvatar] = await Promise.all([
-        fetchImage(senderAvatarUrl),
-        fetchImage(partnerAvatarUrl)
-      ]);
+      // ===============================
+      // REMOVE COMMAND USER
+      // ===============================
+      const senderIDString =
+        String(senderID);
 
-      // 📍 Scale calculation (Template width x height adapt korar jonno)
-      const scaleX = canvas.width / 663;
-      const scaleY = canvas.height / 1000;
+      const otherMembers =
+        participantIDs.filter(
+          id => id !== senderIDString
+        );
 
-      // 1. Profile Picture Size & Position (Kalo biral & meyer frame-er thik majhkhane)
-      const avatarSize = 182 * scaleX;
-      const leftX = 139 * scaleX;
-      const leftY = 514 * scaleY;
-      const rightX = 342 * scaleX;
-      const rightY = 514 * scaleY;
+      if (!otherMembers.length) {
+        return message.reply(
+          "❌ Pair korar moto kono member nei!"
+        );
+      }
 
-      drawCircularImage(ctx, senderAvatar, leftX, leftY, avatarSize);
-      drawCircularImage(ctx, partnerAvatar, rightX, rightY, avatarSize);
+      // ===============================
+      // RANDOM PARTNER
+      // ===============================
+      const randomPartnerID =
+        otherMembers[
+          Math.floor(
+            Math.random() *
+            otherMembers.length
+          )
+        ];
 
-      // 2. Cover Old Names ("SADIKUR RAHMAN" & "SEHNAZ FATEMA" dhakar jonno box)
-      const boxW = 210 * scaleX;
-      const boxH = 65 * scaleY;
-      const boxRadius = 16 * scaleX;
-      const boxY = 785 * scaleY;
+      // ===============================
+      // GET BOTH USER DATA
+      // ===============================
+      const [sender, partner] =
+        await Promise.all([
+          getUser(api, senderIDString),
+          getUser(api, randomPartnerID)
+        ]);
 
-      // White/Light background fill for new text
-      drawRoundedRect(ctx, 125 * scaleX, boxY, boxW, boxH, boxRadius, '#F2EFF6');
-      drawRoundedRect(ctx, 328 * scaleX, boxY, boxW, boxH, boxRadius, '#F2EFF6');
+      console.log(
+        "[PAIR] Sender:",
+        sender
+      );
 
-      // 3. Draw New Dynamic Names
-      ctx.fillStyle = '#1A1A1A';
-      ctx.textAlign = 'center';
-      ctx.font = `bold ${Math.floor(19 * scaleX)}px Arial`;
+      console.log(
+        "[PAIR] Partner:",
+        partner
+      );
 
-      ctx.fillText(senderName.toUpperCase(), 230 * scaleX, boxY + (boxH / 2) + 6);
-      ctx.fillText(partnerName.toUpperCase(), 433 * scaleX, boxY + (boxH / 2) + 6);
+      // ===============================
+      // AVATARS
+      // ===============================
+      const [senderAvatar, partnerAvatar] =
+        await Promise.all([
+          loadRemoteImage(
+            sender.avatar ||
+            DEFAULT_AVATAR
+          ),
 
-      // Save Output
-      const cacheDir = path.join(__dirname, 'cache');
-      if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+          loadRemoteImage(
+            partner.avatar ||
+            DEFAULT_AVATAR
+          )
+        ]);
 
-      const outputPath = path.join(cacheDir, `pair_${senderID}.png`);
-      await fs.writeFile(outputPath, canvas.toBuffer('image/png'));
+      // ===============================
+      // TEMPLATE
+      // ===============================
+      const templateBuffer =
+        await fetchBuffer(TEMPLATE_URL);
 
-      const compatibility = Math.floor(Math.random() * 41) + 60;
+      const template =
+        await loadImage(templateBuffer);
 
+      const canvas =
+        createCanvas(
+          template.width,
+          template.height
+        );
+
+      const ctx =
+        canvas.getContext("2d");
+
+      ctx.drawImage(
+        template,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      // ===============================
+      // SCALE
+      // Template original ≈ 1018 x 1536
+      // ===============================
+      const scaleX =
+        canvas.width / 1018;
+
+      const scaleY =
+        canvas.height / 1536;
+
+      const scale =
+        Math.min(scaleX, scaleY);
+
+      // ===============================
+      // AVATAR POSITION
+      // ===============================
+      // Left frame center
+      const leftCX =
+        317 * scaleX;
+
+      const leftCY =
+        935 * scaleY;
+
+      // Right frame center
+      const rightCX =
+        705 * scaleX;
+
+      const rightCY =
+        935 * scaleY;
+
+      const avatarSize =
+        285 * scale;
+
+      drawCircleImage(
+        ctx,
+        senderAvatar,
+        leftCX,
+        leftCY,
+        avatarSize
+      );
+
+      drawCircleImage(
+        ctx,
+        partnerAvatar,
+        rightCX,
+        rightCY,
+        avatarSize
+      );
+
+      // ===============================
+      // COVER OLD NAMES
+      // ===============================
+      const nameY =
+        1165 * scaleY;
+
+      const nameH =
+        145 * scaleY;
+
+      const leftNameX =
+        118 * scaleX;
+
+      const rightNameX =
+        527 * scaleX;
+
+      const nameW =
+        373 * scaleX;
+
+      roundedRect(
+        ctx,
+        leftNameX,
+        nameY,
+        nameW,
+        nameH,
+        30 * scale,
+        "#F2EFF6"
+      );
+
+      roundedRect(
+        ctx,
+        rightNameX,
+        nameY,
+        nameW,
+        nameH,
+        30 * scale,
+        "#F2EFF6"
+      );
+
+      // ===============================
+      // DRAW DYNAMIC NAMES
+      // ===============================
+      drawName(
+        ctx,
+        sender.name,
+        leftNameX,
+        nameY,
+        nameW,
+        nameH,
+        scale
+      );
+
+      drawName(
+        ctx,
+        partner.name,
+        rightNameX,
+        nameY,
+        nameW,
+        nameH,
+        scale
+      );
+
+      // ===============================
+      // RANDOM COMPATIBILITY
+      // 60 - 100%
+      // ===============================
+      const compatibility =
+        Math.floor(
+          Math.random() * 41
+        ) + 60;
+
+      // ===============================
+      // COVER OLD COMPATIBILITY
+      // ===============================
+      roundedRect(
+        ctx,
+        95 * scaleX,
+        1360 * scaleY,
+        830 * scaleX,
+        105 * scaleY,
+        25 * scale,
+        "rgba(232, 218, 237, 0.96)"
+      );
+
+      // ===============================
+      // NEW COMPATIBILITY
+      // ===============================
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      ctx.font =
+        `bold ${42 * scale}px Georgia`;
+
+      ctx.fillStyle = "#171717";
+
+      ctx.fillText(
+        `→ COMPATIBILITY: ${compatibility}% 💘`,
+        canvas.width / 2,
+        1410 * scaleY
+      );
+
+      // ===============================
+      // SAVE
+      // ===============================
+      const cacheDir =
+        path.join(
+          __dirname,
+          "cache"
+        );
+
+      if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(
+          cacheDir,
+          { recursive: true }
+        );
+      }
+
+      const outputPath =
+        path.join(
+          cacheDir,
+          `pair_${senderID}_${Date.now()}.png`
+        );
+
+      fs.writeFileSync(
+        outputPath,
+        canvas.toBuffer("image/png")
+      );
+
+      // ===============================
+      // SEND
+      // ===============================
       await message.reply({
-        body: `💘 MATCHMAKING COMPLETE 💘\n\n👤 ${senderName} × ${partnerName}\n✨ Compatibility: ${compatibility}%`,
-        attachment: fs.createReadStream(outputPath)
+        body:
+          `💘 MATCHMAKING COMPLETE 💘\n\n` +
+          `👤 ${sender.name} × ${partner.name}\n` +
+          `✨ Compatibility: ${compatibility}%`,
+
+        attachment:
+          fs.createReadStream(outputPath)
       });
 
+      // ===============================
+      // DELETE CACHE
+      // ===============================
       setTimeout(() => {
-        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-      }, 10000);
+        try {
+          if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath);
+          }
+        } catch (e) {}
+      }, 15000);
 
     } catch (error) {
-      console.error(error);
-      return message.reply("Pair banner generate korte problem hoyeche: " + error.message);
+      console.error(
+        "[PAIR ERROR]",
+        error
+      );
+
+      return message.reply(
+        "❌ Pair banner generate korte problem hoyeche!"
+      );
     }
   }
 };
