@@ -50,8 +50,15 @@ module.exports = {
       const threadID = event.threadID || event.chat_id;
       const senderID = event.senderID || message.senderID;
 
-      let threadInfo = await api.getThreadInfo(threadID).catch(() => null);
-      let participantIDs = threadInfo ? threadInfo.participantIDs : [];
+      // Safe thread info fetching
+      let threadInfo = null;
+      try {
+        threadInfo = await api.getThreadInfo(threadID);
+      } catch (e) {
+        threadInfo = null;
+      }
+
+      let participantIDs = threadInfo ? (threadInfo.participantIDs || threadInfo.participants) : [];
 
       if (!participantIDs || participantIDs.length < 2) {
         return message.reply(`❌ এই কমান্ডটি শুধু গ্রুপ চ্যাটে (GC) কাজ করবে এবং কমপক্ষে ২ জন মেম্বার থাকতে হবে!\nব্যবহার পদ্ধতি: ${prefix}pair`);
@@ -60,11 +67,24 @@ module.exports = {
       let otherMembers = participantIDs.filter(id => id !== senderID);
       let randomPartnerID = otherMembers[Math.floor(Math.random() * otherMembers.length)];
 
-      let senderInfo = await usersData.get(senderID).catch(() => null) || {};
-      let partnerInfo = await usersData.get(randomPartnerID).catch(() => null) || {};
+      // Safe user data fetching (Fixing usersData.get issue)
+      let senderInfo = {};
+      let partnerInfo = {};
 
-      let senderName = senderInfo.name || "User";
-      let partnerName = partnerInfo.name || "Partner";
+      try {
+        senderInfo = (await usersData.get(senderID)) || {};
+      } catch (e) {
+        senderInfo = {};
+      }
+
+      try {
+        partnerInfo = (await usersData.get(randomPartnerID)) || {};
+      } catch (e) {
+        partnerInfo = {};
+      }
+
+      let senderName = senderInfo.name || senderInfo.username || "User";
+      let partnerName = partnerInfo.name || partnerInfo.username || "Partner";
 
       let senderAvatarUrl = await getInstagramAvatar(senderID, senderInfo.username);
       let partnerAvatarUrl = await getInstagramAvatar(randomPartnerID, partnerInfo.username);
