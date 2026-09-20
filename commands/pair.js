@@ -3,12 +3,14 @@ const axios = require('axios');
 const fs = require('fs-extra');
 const path = require('path');
 
+// 🔗 Aponar deowa Catbox Template JPG URL
+const CATBOX_TEMPLATE_URL = "https://files.catbox.moe/bfonlm.jpg";
+
 /**
- * Instagram Profile Picture Fetcher API Helper
+ * Avatar Fetcher Helper Function
  */
-async function getInstagramAvatar(userID, username = "") {
+async function getAvatarUrl(userID, username = "") {
   const defaultAvatar = 'https://i.imgur.com/6VBx3io.png';
-  
   try {
     if (username) {
       const response = await axios.get(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`, {
@@ -26,9 +28,8 @@ async function getInstagramAvatar(userID, username = "") {
       return `https://graph.facebook.com/${userID}/picture?height=720&width=720&access_token=6628568379%7Cc1e620fa708a1d5696fb991c1bde5662`;
     }
   } catch (error) {
-    console.error("Avatar API Fetch Error:", error.message);
+    console.error("Avatar Fetch Error:", error.message);
   }
-
   return defaultAvatar;
 }
 
@@ -50,7 +51,7 @@ module.exports = {
       const threadID = event.threadID || event.chat_id;
       const senderID = event.senderID || message.senderID;
 
-      // Safe thread info fetching
+      // Group Thread Info Fetching
       let threadInfo = null;
       try {
         threadInfo = await api.getThreadInfo(threadID);
@@ -61,13 +62,14 @@ module.exports = {
       let participantIDs = threadInfo ? (threadInfo.participantIDs || threadInfo.participants) : [];
 
       if (!participantIDs || participantIDs.length < 2) {
-        return message.reply(`❌ এই কমান্ডটি শুধু গ্রুপ চ্যাটে (GC) কাজ করবে এবং কমপক্ষে ২ জন মেম্বার থাকতে হবে!\nব্যবহার পদ্ধতি: ${prefix}pair`);
+        return message.reply(`❌ Ei command ti shudhu group chat e (GC) kaj korbe ebong kompokkhe 2 jon member thakte hobe!\nBabohar poddhoti: ${prefix}pair`);
       }
 
+      // Random Partner Selection
       let otherMembers = participantIDs.filter(id => id !== senderID);
       let randomPartnerID = otherMembers[Math.floor(Math.random() * otherMembers.length)];
 
-      // Safe user data fetching (Fixing usersData.get issue)
+      // Fetch User Data
       let senderInfo = {};
       let partnerInfo = {};
 
@@ -86,8 +88,9 @@ module.exports = {
       let senderName = senderInfo.name || senderInfo.username || "User";
       let partnerName = partnerInfo.name || partnerInfo.username || "Partner";
 
-      let senderAvatarUrl = await getInstagramAvatar(senderID, senderInfo.username);
-      let partnerAvatarUrl = await getInstagramAvatar(randomPartnerID, partnerInfo.username);
+      // Fetch Avatars
+      let senderAvatarUrl = await getAvatarUrl(senderID, senderInfo.username);
+      let partnerAvatarUrl = await getAvatarUrl(randomPartnerID, partnerInfo.username);
 
       const fetchImage = async (url) => {
         try {
@@ -98,22 +101,19 @@ module.exports = {
         }
       };
 
-      // Cache folder auto creation
-      const cacheDir = path.join(__dirname, 'cache');
-      if (!fs.existsSync(cacheDir)) {
-        fs.mkdirSync(cacheDir, { recursive: true });
+      // 📥 Direct Catbox Template Loading
+      let templateImg;
+      try {
+        const templateRes = await axios.get(CATBOX_TEMPLATE_URL, { responseType: 'arraybuffer', timeout: 10000 });
+        templateImg = await loadImage(Buffer.from(templateRes.data));
+      } catch (err) {
+        return message.reply("❌ Catbox URL theke template image load hote somossa hoyeche!");
       }
 
-      const templatePath = path.join(cacheDir, 'pair_template.png');
-
-      if (!fs.existsSync(templatePath)) {
-        return message.reply("⚠️ Banner template 'cache/pair_template.png' পাওয়া যায়নি!");
-      }
-
-      const templateImg = await loadImage(templatePath);
       const canvas = createCanvas(templateImg.width, templateImg.height);
       const ctx = canvas.getContext('2d');
 
+      // Draw Background Template
       ctx.drawImage(templateImg, 0, 0, canvas.width, canvas.height);
 
       const [senderAvatar, partnerAvatar] = await Promise.all([
@@ -121,6 +121,7 @@ module.exports = {
         fetchImage(partnerAvatarUrl)
       ]);
 
+      // Circle Profile Picture Drawer Function
       const drawCircularImage = (img, x, y, size) => {
         ctx.save();
         ctx.beginPath();
@@ -131,21 +132,32 @@ module.exports = {
         ctx.restore();
       };
 
-      const avatarSize = 220;
-      const leftX = 145;
-      const leftY = 485;
-      const rightX = 535;
-      const rightY = 485;
+      // 📍 Profile Picture & Text Position Setup
+      // Apnar template er structure onujayi ei value gulo dorkar hole change korte paren:
+      const avatarSize = 220; // Profile Picture Size
+      const leftX = 145;      // Left Profile Picture X position
+      const leftY = 485;      // Left Profile Picture Y position
+      const rightX = 535;     // Right Profile Picture X position
+      const rightY = 485;     // Right Profile Picture Y position
 
+      // Draw Profile Pictures
       drawCircularImage(senderAvatar, leftX, leftY, avatarSize);
       drawCircularImage(partnerAvatar, rightX, rightY, avatarSize);
 
-      ctx.fillStyle = '#1A1A1A';
+      // Text Formatting Setup
+      ctx.fillStyle = '#FFFFFF'; // Text Color (White)
       ctx.textAlign = 'center';
       ctx.font = 'bold 26px Arial';
 
-      ctx.fillText(senderName.toUpperCase(), leftX + avatarSize / 2, leftY + avatarSize + 115);
-      ctx.fillText(partnerName.toUpperCase(), rightX + avatarSize / 2, rightY + avatarSize + 115);
+      // Draw User Names
+      ctx.fillText(senderName.toUpperCase(), leftX + avatarSize / 2, leftY + avatarSize + 50);
+      ctx.fillText(partnerName.toUpperCase(), rightX + avatarSize / 2, rightY + avatarSize + 50);
+
+      // Cache directory setup
+      const cacheDir = path.join(__dirname, 'cache');
+      if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
+      }
 
       const outputPath = path.join(cacheDir, `pair_${senderID}.png`);
       const buffer = canvas.toBuffer('image/png');
@@ -158,13 +170,14 @@ module.exports = {
         attachment: fs.createReadStream(outputPath)
       });
 
+      // Temporary file delete
       setTimeout(() => {
         if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
       }, 10000);
 
     } catch (error) {
       console.error(error);
-      return message.reply("Pair banner generate করতে সমস্যা হয়েছে: " + error.message);
+      return message.reply("Pair banner generate korte somossa hoyeche: " + error.message);
     }
   }
 };
