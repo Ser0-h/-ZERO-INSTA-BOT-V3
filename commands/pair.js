@@ -7,20 +7,24 @@ const TEMPLATE_URL = "https://files.catbox.moe/bfonlm.jpg";
 const DEFAULT_AVATAR =
   "https://i.imgur.com/6VBx3io.png";
 
-/* =========================================
-   FETCH
-========================================= */
+/* =====================================================
+   FETCH BUFFER
+===================================================== */
 
-async function fetchBuffer(url, timeout = 12000) {
+async function fetchBuffer(url, timeout = 15000) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeout);
 
   try {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "*/*"
       }
     });
 
@@ -28,155 +32,359 @@ async function fetchBuffer(url, timeout = 12000) {
       throw new Error(`HTTP ${res.status}`);
     }
 
-    return Buffer.from(await res.arrayBuffer());
+    return Buffer.from(
+      await res.arrayBuffer()
+    );
+
   } finally {
     clearTimeout(timer);
   }
 }
 
-/* =========================================
-   DEEP SEARCH
-   API response structure যাই হোক খুঁজবে
-========================================= */
+/* =====================================================
+   LOAD IMAGE
+===================================================== */
 
-function deepFind(obj, keys, depth = 0) {
-  if (!obj || depth > 6) return null;
+async function loadRemoteImage(url) {
+  try {
+    if (!url) {
+      throw new Error("No image URL");
+    }
 
-  if (typeof obj !== "object") return null;
+    const buffer =
+      await fetchBuffer(url);
+
+    return await loadImage(buffer);
+
+  } catch (e) {
+    console.log(
+      "[PAIR] Avatar failed:",
+      e.message
+    );
+
+    const buffer =
+      await fetchBuffer(
+        DEFAULT_AVATAR
+      );
+
+    return await loadImage(buffer);
+  }
+}
+
+/* =====================================================
+   FIND VALUE RECURSIVELY
+===================================================== */
+
+function findValue(data, keys) {
+  if (!data) return null;
+
+  if (
+    typeof data === "string" ||
+    typeof data === "number"
+  ) {
+    return null;
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const found =
+        findValue(item, keys);
+
+      if (found) return found;
+    }
+
+    return null;
+  }
+
+  if (typeof data !== "object") {
+    return null;
+  }
 
   for (const key of keys) {
     if (
-      Object.prototype.hasOwnProperty.call(obj, key) &&
-      obj[key] != null
+      data[key] !== undefined &&
+      data[key] !== null &&
+      data[key] !== ""
     ) {
-      const value = obj[key];
-
-      if (
-        typeof value === "string" ||
-        typeof value === "number"
-      ) {
-        return String(value);
-      }
+      return String(data[key]);
     }
   }
 
-  for (const key of Object.keys(obj)) {
-    try {
-      const result = deepFind(
-        obj[key],
-        keys,
-        depth + 1
-      );
+  for (const key of Object.keys(data)) {
+    const found =
+      findValue(data[key], keys);
 
-      if (result) return result;
-    } catch {}
+    if (found) return found;
   }
 
   return null;
 }
 
-/* =========================================
-   GET USER DATA
-========================================= */
+/* =====================================================
+   EXTRACT USER DATA
+===================================================== */
 
-async function getUserData(api, userID) {
-  try {
-    const response = await api.getUserInfo(userID);
-
-    console.log(
-      `[PAIR] getUserInfo(${userID}):`,
-      JSON.stringify(response)
-    );
-
-    /*
-      Different API naming support
-    */
-
-    const name = deepFind(response, [
-      "name",
-      "fullName",
+function extractUserData(info, userID) {
+  const name =
+    findValue(info, [
       "full_name",
-      "username",
-      "userName",
+      "fullName",
+      "name",
       "displayName",
-      "display_name"
+      "display_name",
+      "username",
+      "userName"
     ]);
 
-    const avatar = deepFind(response, [
-      "profilePicUrlHD",
+  const username =
+    findValue(info, [
+      "username",
+      "userName"
+    ]);
+
+  const avatar =
+    findValue(info, [
       "profile_pic_url_hd",
-      "profilePicUrl",
+      "profilePicUrlHD",
       "profile_pic_url",
-      "profilePicture",
-      "profile_picture",
-      "profilePictureUrl",
+      "profilePicUrl",
       "profile_picture_url",
-      "avatar",
+      "profilePictureUrl",
+      "profile_picture",
+      "profilePicture",
       "avatarUrl",
       "avatar_url",
-      "photoUrl",
-      "photo_url",
-      "thumbSrc",
-      "thumb_src",
-      "thumbnailUrl",
-      "thumbnail_url"
+      "avatar",
+      "hd_profile_pic_url_info",
+      "hd_profile_pic_url"
     ]);
 
-    return {
-      id: String(userID),
+  return {
+    id: String(userID),
 
+    name:
+      name ||
+      username ||
+      null,
+
+    username:
+      username ||
+      null,
+
+    avatar:
+      avatar ||
+      null
+  };
+}
+
+/* =====================================================
+   GET DATA FROM usersData
+===================================================== */
+
+async function getDatabaseUser(usersData, userID) {
+  if (!usersData) {
+    return {};
+  }
+
+  try {
+    const data =
+      await usersData.get(
+        String(userID)
+      );
+
+    if (!data) {
+      return {};
+    }
+
+    return {
       name:
-        name ||
-        `User ${userID}`,
+        data.name ||
+        data.fullName ||
+        data.full_name ||
+        data.username ||
+        data.userName ||
+        null,
+
+      username:
+        data.username ||
+        data.userName ||
+        null,
 
       avatar:
-        avatar || null
+        data.profilePicUrl ||
+        data.profile_pic_url ||
+        data.profilePicUrlHD ||
+        data.profile_pic_url_hd ||
+        data.avatar ||
+        data.avatarUrl ||
+        data.avatar_url ||
+        null
     };
 
-  } catch (error) {
+  } catch (e) {
     console.log(
-      `[PAIR] User info error ${userID}:`,
-      error.message
+      "[PAIR] usersData error:",
+      e.message
     );
 
-    return {
-      id: String(userID),
-      name: `User ${userID}`,
-      avatar: null
-    };
+    return {};
   }
 }
 
-/* =========================================
-   LOAD IMAGE
-========================================= */
+/* =====================================================
+   GET INSTAGRAM USER
+===================================================== */
 
-async function getImage(url) {
+async function getInstagramUser(
+  api,
+  userID,
+  usersData
+) {
+  let databaseUser = {};
+
+  /* ------------------------------
+     First: usersData
+  ------------------------------ */
+
+  databaseUser =
+    await getDatabaseUser(
+      usersData,
+      userID
+    );
+
+  /* ------------------------------
+     Second: api.getUserInfo
+  ------------------------------ */
+
+  let apiUser = {};
+
   try {
-    const buffer = await fetchBuffer(url);
-    return await loadImage(buffer);
-  } catch (error) {
+    if (
+      typeof api.getUserInfo ===
+      "function"
+    ) {
+      const info =
+        await api.getUserInfo(
+          String(userID)
+        );
+
+      console.log(
+        `[PAIR] API INFO ${userID}:`,
+        JSON.stringify(info)
+      );
+
+      apiUser =
+        extractUserData(
+          info,
+          userID
+        );
+    }
+  } catch (e) {
     console.log(
-      "[PAIR] Avatar load failed:",
-      error.message
+      `[PAIR] getUserInfo failed ${userID}:`,
+      e.message
     );
-
-    const fallback =
-      await fetchBuffer(DEFAULT_AVATAR);
-
-    return await loadImage(fallback);
   }
+
+  /* ------------------------------
+     Merge
+  ------------------------------ */
+
+  let username =
+    apiUser.username ||
+    databaseUser.username ||
+    null;
+
+  let name =
+    databaseUser.name ||
+    apiUser.name ||
+    username ||
+    null;
+
+  let avatar =
+    apiUser.avatar ||
+    databaseUser.avatar ||
+    null;
+
+  /* =================================================
+     Third: Instagram web profile lookup
+     username পাওয়া গেলে
+  ================================================= */
+
+  if (
+    username &&
+    (!avatar || !name)
+  ) {
+    try {
+      const url =
+        "https://www.instagram.com/api/v1/users/web_profile_info/" +
+        `?username=${encodeURIComponent(username)}`;
+
+      const buffer =
+        await fetchBuffer(
+          url,
+          10000
+        );
+
+      const json =
+        JSON.parse(
+          buffer.toString()
+        );
+
+      const webUser =
+        json?.data?.user;
+
+      if (webUser) {
+
+        name =
+          webUser.full_name ||
+          webUser.username ||
+          name;
+
+        username =
+          webUser.username ||
+          username;
+
+        avatar =
+          webUser.profile_pic_url_hd ||
+          webUser.profile_pic_url ||
+          avatar;
+      }
+
+    } catch (e) {
+      console.log(
+        `[PAIR] Web profile failed ${username}:`,
+        e.message
+      );
+    }
+  }
+
+  return {
+    id: String(userID),
+
+    name:
+      name ||
+      `User ${userID}`,
+
+    username:
+      username ||
+      null,
+
+    avatar:
+      avatar ||
+      null
+  };
 }
 
-/* =========================================
-   CIRCLE IMAGE
-========================================= */
+/* =====================================================
+   CIRCLE AVATAR
+===================================================== */
 
 function drawCircleImage(
   ctx,
-  img,
-  cx,
-  cy,
+  image,
+  centerX,
+  centerY,
   size
 ) {
   ctx.save();
@@ -184,45 +392,55 @@ function drawCircleImage(
   ctx.beginPath();
 
   ctx.arc(
-    cx,
-    cy,
+    centerX,
+    centerY,
     size / 2,
     0,
     Math.PI * 2
   );
 
   ctx.closePath();
+
   ctx.clip();
 
-  const scale = Math.max(
-    size / img.width,
-    size / img.height
-  );
+  const scale =
+    Math.max(
+      size / image.width,
+      size / image.height
+    );
 
-  const w = img.width * scale;
-  const h = img.height * scale;
+  const width =
+    image.width * scale;
+
+  const height =
+    image.height * scale;
 
   ctx.drawImage(
-    img,
-    cx - w / 2,
-    cy - h / 2,
-    w,
-    h
+    image,
+
+    centerX -
+      width / 2,
+
+    centerY -
+      height / 2,
+
+    width,
+    height
   );
 
   ctx.restore();
 }
 
-/* =========================================
-   ROUND BOX
-========================================= */
+/* =====================================================
+   ROUNDED RECT
+===================================================== */
 
-function roundRect(
+function roundedRect(
   ctx,
   x,
   y,
-  w,
-  h,
+  width,
+  height,
   radius,
   color
 ) {
@@ -230,42 +448,45 @@ function roundRect(
 
   ctx.beginPath();
 
-  ctx.moveTo(x + radius, y);
+  ctx.moveTo(
+    x + radius,
+    y
+  );
 
   ctx.lineTo(
-    x + w - radius,
+    x + width - radius,
     y
   );
 
   ctx.quadraticCurveTo(
-    x + w,
+    x + width,
     y,
-    x + w,
+    x + width,
     y + radius
   );
 
   ctx.lineTo(
-    x + w,
-    y + h - radius
+    x + width,
+    y + height - radius
   );
 
   ctx.quadraticCurveTo(
-    x + w,
-    y + h,
-    x + w - radius,
-    y + h
+    x + width,
+    y + height,
+    x + width - radius,
+    y + height
   );
 
   ctx.lineTo(
     x + radius,
-    y + h
+    y + height
   );
 
   ctx.quadraticCurveTo(
     x,
-    y + h,
+    y + height,
     x,
-    y + h - radius
+    y + height - radius
   );
 
   ctx.lineTo(
@@ -288,9 +509,9 @@ function roundRect(
   ctx.restore();
 }
 
-/* =========================================
+/* =====================================================
    DRAW NAME
-========================================= */
+===================================================== */
 
 function drawName(
   ctx,
@@ -299,25 +520,23 @@ function drawName(
   centerY,
   maxWidth
 ) {
-  name = String(name || "Unknown")
+  name = String(
+    name || "UNKNOWN"
+  )
     .replace(/\s+/g, " ")
-    .trim();
-
-  /*
-    Long name হলে font ছোট হবে
-  */
+    .trim()
+    .toUpperCase();
 
   let fontSize = 34;
 
-  while (
-    fontSize > 16
-  ) {
+  while (fontSize >= 16) {
+
     ctx.font =
       `bold ${fontSize}px Arial`;
 
     if (
-      ctx.measureText(name).width <=
-      maxWidth
+      ctx.measureText(name)
+        .width <= maxWidth
     ) {
       break;
     }
@@ -325,23 +544,27 @@ function drawName(
     fontSize--;
   }
 
-  ctx.fillStyle = "#111111";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
+  ctx.fillStyle =
+    "#111111";
+
+  ctx.textAlign =
+    "center";
+
+  ctx.textBaseline =
+    "middle";
 
   ctx.font =
     `bold ${fontSize}px Arial`;
 
-  /*
-    One line
-  */
+  /* ONE LINE */
 
   if (
-    ctx.measureText(name).width <=
-    maxWidth
+    ctx.measureText(name)
+      .width <= maxWidth
   ) {
+
     ctx.fillText(
-      name.toUpperCase(),
+      name,
       centerX,
       centerY
     );
@@ -349,9 +572,7 @@ function drawName(
     return;
   }
 
-  /*
-    Two line
-  */
+  /* TWO LINE */
 
   const words =
     name.split(" ");
@@ -359,15 +580,18 @@ function drawName(
   let line1 = "";
   let line2 = "";
 
-  for (const word of words) {
+  for (
+    const word of words
+  ) {
+
     const test =
       line1
         ? `${line1} ${word}`
         : word;
 
     if (
-      ctx.measureText(test).width <=
-      maxWidth
+      ctx.measureText(test)
+        .width <= maxWidth
     ) {
       line1 = test;
     } else {
@@ -382,58 +606,72 @@ function drawName(
     fontSize * 1.05;
 
   ctx.fillText(
-    line1.toUpperCase(),
+    line1,
     centerX,
-    centerY - lineHeight / 2
+    centerY -
+      lineHeight / 2
   );
 
   ctx.fillText(
-    line2.toUpperCase(),
+    line2,
     centerX,
-    centerY + lineHeight / 2
+    centerY +
+      lineHeight / 2
   );
 }
 
-/* =========================================
+/* =====================================================
    COMMAND
-========================================= */
+===================================================== */
 
 module.exports = {
 
   config: {
+
     name: "pair",
-    aliases: ["pair"],
 
-    author: "Idle×Saow",
+    aliases: [
+      "pair"
+    ],
 
-    category: "love",
+    author:
+      "Idle×Saow",
 
-    cooldown: 5,
+    category:
+      "love",
 
-    role: 0,
+    cooldown:
+      5,
 
-    usePrefix: true,
+    role:
+      0,
+
+    usePrefix:
+      true,
 
     description: {
-      en: "Pair with a random group member"
+      en:
+        "Pair with a random group member"
     },
 
     usage: {
-      en: "{p}pair"
+      en:
+        "{p}pair"
     }
   },
 
   onStart: async function ({
     message,
     event,
-    api
+    api,
+    usersData
   }) {
 
     try {
 
-      /* =====================================
-         SENDER
-      ===================================== */
+      /* =========================================
+         USER ID
+      ========================================= */
 
       const senderID =
         String(
@@ -452,9 +690,9 @@ module.exports = {
         );
       }
 
-      /* =====================================
-         THREAD INFO
-      ===================================== */
+      /* =========================================
+         THREAD
+      ========================================= */
 
       let threadInfo;
 
@@ -465,11 +703,11 @@ module.exports = {
             threadID
           );
 
-      } catch (error) {
+      } catch (e) {
 
         console.log(
           "[PAIR] Thread error:",
-          error.message
+          e.message
         );
 
         return message.reply(
@@ -477,9 +715,9 @@ module.exports = {
         );
       }
 
-      /* =====================================
-         PARTICIPANTS
-      ===================================== */
+      /* =========================================
+         MEMBERS
+      ========================================= */
 
       let members = [];
 
@@ -504,7 +742,8 @@ module.exports = {
             .map(user => {
 
               if (
-                typeof user === "string"
+                typeof user ===
+                "string"
               ) {
                 return user;
               }
@@ -525,375 +764,102 @@ module.exports = {
         ...new Set(members)
       ];
 
-      /* =====================================
-         GROUP CHECK
-      ===================================== */
-
-      if (members.length < 2) {
-
+      if (
+        members.length < 2
+      ) {
         return message.reply(
           "❌ Ei command ti shudhu group chat-e kaj korbe!"
         );
       }
 
-      /* =====================================
-         REMOVE COMMAND USER
-      ===================================== */
+      /* =========================================
+         RANDOM PARTNER
+      ========================================= */
 
-      const possiblePartners =
+      const available =
         members.filter(
           id =>
-            String(id) !==
-            String(senderID)
+            id !== senderID
         );
 
       if (
-        possiblePartners.length === 0
+        !available.length
       ) {
-
         return message.reply(
-          "❌ Pair korar moto kono member nei!"
+          "❌ Pair korar moto member nei!"
         );
       }
 
-      /* =====================================
-         RANDOM PARTNER
-      ===================================== */
-
       const partnerID =
-        possiblePartners[
+        available[
           Math.floor(
             Math.random() *
-            possiblePartners.length
+            available.length
           )
         ];
 
-      /* =====================================
-         GET ACTUAL USER DATA
-      ===================================== */
+      /* =========================================
+         GET BOTH USERS
+      ========================================= */
 
       const [
         sender,
         partner
       ] = await Promise.all([
 
-        getUserData(
+        getInstagramUser(
           api,
-          senderID
+          senderID,
+          usersData
         ),
 
-        getUserData(
+        getInstagramUser(
           api,
-          partnerID
+          partnerID,
+          usersData
         )
 
       ]);
 
+      /* =========================================
+         DEBUG
+      ========================================= */
+
       console.log(
-        "[PAIR] FINAL SENDER:",
+        "================ PAIR ================"
+      );
+
+      console.log(
+        "SENDER:",
         sender
       );
 
       console.log(
-        "[PAIR] FINAL PARTNER:",
+        "PARTNER:",
         partner
       );
 
-      /* =====================================
-         GET PROFILE PICTURES
-      ===================================== */
+      console.log(
+        "======================================"
+      );
+
+      /* =========================================
+         AVATAR
+      ========================================= */
 
       const [
         senderAvatar,
         partnerAvatar
       ] = await Promise.all([
 
-        getImage(
-          sender.avatar ||
-          DEFAULT_AVATAR
+        loadRemoteImage(
+          sender.avatar
         ),
 
-        getImage(
-          partner.avatar ||
-          DEFAULT_AVATAR
+        loadRemoteImage(
+          partner.avatar
         )
 
       ]);
 
-      /* =====================================
-         TEMPLATE
-      ===================================== */
-
-      const templateBuffer =
-        await fetchBuffer(
-          TEMPLATE_URL
-        );
-
-      const template =
-        await loadImage(
-          templateBuffer
-        );
-
-      const canvas =
-        createCanvas(
-          template.width,
-          template.height
-        );
-
-      const ctx =
-        canvas.getContext("2d");
-
-      ctx.drawImage(
-        template,
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-
-      /*
-        Template = 1018 x 1536
-      */
-
-      const sx =
-        canvas.width / 1018;
-
-      const sy =
-        canvas.height / 1536;
-
-      /* =====================================
-         PROFILE PICTURES
-      ===================================== */
-
-      /*
-        Frame-এর ভিতরের exact center
-      */
-
-      const avatarSize =
-        260 * Math.min(
-          sx,
-          sy
-        );
-
-      const leftX =
-        307 * sx;
-
-      const rightX =
-        711 * sx;
-
-      const avatarY =
-        933 * sy;
-
-      drawCircleImage(
-        ctx,
-        senderAvatar,
-        leftX,
-        avatarY,
-        avatarSize
-      );
-
-      drawCircleImage(
-        ctx,
-        partnerAvatar,
-        rightX,
-        avatarY,
-        avatarSize
-      );
-
-      /* =====================================
-         NAME BOX
-      ===================================== */
-
-      /*
-        Existing names cover
-      */
-
-      const boxY =
-        1168 * sy;
-
-      const boxH =
-        142 * sy;
-
-      const boxW =
-        375 * sx;
-
-      const leftBoxX =
-        118 * sx;
-
-      const rightBoxX =
-        525 * sx;
-
-      /*
-        Existing name area cover
-      */
-
-      roundRect(
-        ctx,
-        leftBoxX,
-        boxY,
-        boxW,
-        boxH,
-        28 * Math.min(sx, sy),
-        "#F2EFF6"
-      );
-
-      roundRect(
-        ctx,
-        rightBoxX,
-        boxY,
-        boxW,
-        boxH,
-        28 * Math.min(sx, sy),
-        "#F2EFF6"
-      );
-
-      /* =====================================
-         ACTUAL NAMES
-      ===================================== */
-
-      drawName(
-        ctx,
-        sender.name,
-        leftBoxX + boxW / 2,
-        boxY + boxH / 2,
-        boxW * 0.88
-      );
-
-      drawName(
-        ctx,
-        partner.name,
-        rightBoxX + boxW / 2,
-        boxY + boxH / 2,
-        boxW * 0.88
-      );
-
-      /* =====================================
-         RANDOM PERCENTAGE
-      ===================================== */
-
-      const percentage =
-        Math.floor(
-          Math.random() * 41
-        ) + 60;
-
-      /* =====================================
-         COMPATIBILITY
-      ===================================== */
-
-      const compatibilityY =
-        1408 * sy;
-
-      /*
-        পুরোনো percentage-এর উপর
-        হালকা transparent box
-      */
-
-      roundRect(
-        ctx,
-        95 * sx,
-        1360 * sy,
-        830 * sx,
-        105 * sy,
-        20 * Math.min(sx, sy),
-        "rgba(232, 218, 237, 0.92)"
-      );
-
-      ctx.fillStyle =
-        "#171717";
-
-      ctx.textAlign =
-        "center";
-
-      ctx.textBaseline =
-        "middle";
-
-      ctx.font =
-        `bold ${40 * Math.min(sx, sy)}px Georgia`;
-
-      ctx.fillText(
-        `→ COMPATIBILITY: ${percentage}% 💘`,
-        canvas.width / 2,
-        compatibilityY
-      );
-
-      /* =====================================
-         SAVE
-      ===================================== */
-
-      const cacheDir =
-        path.join(
-          __dirname,
-          "cache"
-        );
-
-      if (!fs.existsSync(cacheDir)) {
-        fs.mkdirSync(
-          cacheDir,
-          {
-            recursive: true
-          }
-        );
-      }
-
-      const outputPath =
-        path.join(
-          cacheDir,
-          `pair_${senderID}_${Date.now()}.png`
-        );
-
-      fs.writeFileSync(
-        outputPath,
-        canvas.toBuffer("image/png")
-      );
-
-      /* =====================================
-         SEND
-      ===================================== */
-
-      await message.reply({
-        body:
-          `💘 MATCHMAKING COMPLETE 💘\n\n` +
-          `👤 ${sender.name} × ${partner.name}\n` +
-          `✨ Compatibility: ${percentage}%`,
-
-        attachment:
-          fs.createReadStream(
-            outputPath
-          )
-      });
-
-      /* =====================================
-         DELETE CACHE
-      ===================================== */
-
-      setTimeout(() => {
-
-        try {
-
-          if (
-            fs.existsSync(
-              outputPath
-            )
-          ) {
-            fs.unlinkSync(
-              outputPath
-            );
-          }
-
-        } catch {}
-
-      }, 15000);
-
-    } catch (error) {
-
-      console.error(
-        "[PAIR ERROR]",
-        error
-      );
-
-      return message.reply(
-        "❌ Pair banner generate korte problem hoyeche!"
-      );
-    }
-  }
-};
+      /* =================================
